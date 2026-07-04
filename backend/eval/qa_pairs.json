@@ -1,0 +1,92 @@
+[
+  {
+    "id": "q1",
+    "type": "single-hop",
+    "question": "Who took over as Chief Financial Officer of Global Trade Corp?",
+    "ground_truth": "Julian Barnes"
+  },
+  {
+    "id": "q2",
+    "type": "single-hop",
+    "question": "What kind of organization is Global Trade Corp?",
+    "ground_truth": "An international logistics organization."
+  },
+  {
+    "id": "q3",
+    "type": "multi-hop",
+    "question": "How is Julian Barnes connected to Geneva?",
+    "ground_truth": "Julian Barnes authorized payments to the crypto wallet 0x9A4bC3F8D, which was cashed out at ATMs in Geneva."
+  },
+  {
+    "id": "q4",
+    "type": "multi-hop",
+    "question": "Who accessed the ATM in Geneva?",
+    "ground_truth": "Elena Rostova"
+  },
+  {
+    "id": "q5",
+    "type": "single-hop",
+    "question": "What is Arthur Pendelton's alias?",
+    "ground_truth": "TechSecure"
+  },
+  {
+    "id": "q6",
+    "type": "multi-hop",
+    "question": "Is there a connection between Global Trade Corp and Arthur Pendelton?",
+    "ground_truth": "Yes, funds from Global Trade Corp were sent to wallet 0x9A4bC3F8D, which Arthur Pendelton also used to launder money."
+  },
+  {
+    "id": "q7",
+    "type": "multi-hop",
+    "question": "How is Elena Rostova connected to Arthur Pendelton?",
+    "ground_truth": "Elena Rostova cashed out funds from wallet 0x9A4bC3F8D, the same wallet Arthur Pendelton used for money laundering."
+  },
+  {
+    "id": "q8",
+    "type": "multi-hop",
+    "question": "What role does wallet 0x9A4bC3F8D play in Arthur Pendelton's scam?",
+    "ground_truth": "It acts as a central mixing node for illicit income streams in his laundering scheme."
+  },
+  {
+    "id": "q9",
+    "type": "single-hop",
+    "question": "Who was arrested by local police in London?",
+    "ground_truth": "Arthur Pendelton"
+  },
+  {
+    "id": "q10",
+    "type": "multi-hop",
+    "question": "Which wallet was used by TechSecure?",
+    "ground_truth": "0x9A4bC3F8D"
+  },
+  {
+    "id": "q11",
+    "type": "multi-hop",
+    "question": "Where did funds authorized by Julian Barnes end up?",
+    "ground_truth": "In wallet 0x9A4bC3F8D, which was withdrawn at ATMs in Geneva by Elena Rostova."
+  },
+  {
+    "id": "q12",
+    "type": "single-hop",
+    "question": "What was the date of Arthur Pendelton's arrest?",
+    "ground_truth": "November 5, 2023"
+  },
+  {
+    "id": "q13",
+    "type": "single-hop",
+    "question": "What did investigators seize from Arthur Pendelton's apartment?",
+    "ground_truth": "Several laptops and hardware wallets."
+  },
+  {
+    "id": "q14",
+    "type": "multi-hop",
+    "question": "Are there any independent contractors connected to Arthur Pendelton?",
+    "ground_truth": "Yes, Elena Rostova, an independent contractor, withdrew funds from the same wallet (0x9A4bC3F8D) used by Arthur."
+  },
+  {
+    "id": "q15",
+    "type": "multi-hop",
+    "question": "Does Global Trade Corp have ties to phishing scams?",
+    "ground_truth": "Global Trade Corp sent funds to wallet 0x9A4bC3F8D, which is the same wallet used by Arthur Pendelton to launder money from a phishing scam."
+  }
+]

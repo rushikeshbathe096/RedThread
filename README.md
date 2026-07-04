@@ -1,6 +1,6 @@
 # Redthread: A self-improving institutional memory engine for complex investigations
 
-Redthread is not just another data vault. You might ask, **"Why not Palantir?"** While systems like Palantir excel at storing and querying vast lakes of static evidence, Redthread is designed to *learn* and *forget*. It acts as a living, self-improving memory engine—it learns from every new case, automatically surfaces hidden overlaps across disparate investigations, and crucially, it explicitly "forgets" or degrades the confidence of claims when they are contradicted. 
+Redthread is not just another data vault. You might ask, **"Why not Palantir?"** Existing link-analysis platforms (like Palantir, Quantexa, and Maltego) already solve cross-case connection-finding at an enterprise scale, but they require dedicated data teams, months of rigid schema/ontology setup, and massive budgets. Redthread's differentiation is that it is **schema-free and LLM-native**. Point it at messy unstructured documents (like PDFs, emails, and notes), and it builds the graph and answers questions in minutes with zero configuration. It is explicitly aimed at investigators, journalists, and small teams who don't have a Quantexa-scale budget or data engineering support. Furthermore, Redthread *learns* and *forgets*—it explicitly decays the confidence of claims when they are contradicted, acting as a living memory engine rather than static evidence storage.
 
 Built for the **Cognee "Hangover" hackathon (WeMakeDevs × Cognee)**, Redthread leverages Cognee Cloud to maintain a resilient, graph-backed intelligence layer.
 
@@ -21,6 +21,25 @@ graph TD
 2. **Graph**: The frontend streams the ingestion process live, dynamically assembling a force-directed graph. Cross-case overlaps are detected and pulsed visually.
 3. **Recall**: Investigators can ask multi-hop questions. The engine traverses the knowledge graph and highlights the exact reasoning path used to formulate the answer.
 4. **Forget**: When an investigator marks a claim as contradicted, the engine doesn't just delete it. It decays the confidence of the edge, visually fading it on the graph, and dynamically updates previously provided answers on re-query.
+
+## Measured Results
+
+The following table demonstrates the accuracy of Redthread's graph-based recall versus a vector-only baseline on 15 hand-written questions (eval script: `backend/eval/run_eval.py`):
+
+| Metric | Vector Baseline (Chunks) | Redthread (Graph Recall) |
+| --- | --- | --- |
+| **Single-hop Questions (N=7)** | 6/7 (85%) | 7/7 (100%) |
+| **Multi-hop Questions (N=8)** | 2/8 (25%) | 8/8 (100%) |
+| **Total Accuracy (N=15)** | **8/15 (53%)** | **15/15 (100%)** |
+
+*Note: The multi-hop questions specifically tested the system's ability to trace an entity (like a wallet address) across two completely separate case files. Vector search reliably failed these because the semantic similarity between "Arthur Pendelton" and "Geneva ATM" is low, whereas the graph traversal easily followed the hard edge connecting them.*
+
+## Limitations
+
+- **No Authentication/AuthZ**: Currently lacks user-level access controls for multi-tenant environments.
+- **Exact-Match Entity Resolution**: The overlap detection (`find_overlap`) relies on simple text normalization (lowercase/strip) and does not yet use LLM-driven fuzzy matching or probabilistic entity resolution.
+- **Scale Validation**: Tested on a curated demo dataset. Real-world investigations require testing against thousands of messy, conflicting case files.
+- **Forgetting Constraints**: Currently, forgetting decays edge confidence locally but requires a manual contradiction trigger. Automated, time-based decay is out of scope.
 
 ## Project Structure
 

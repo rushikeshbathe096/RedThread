@@ -60,6 +60,27 @@ async def recall(query: str) -> dict:
     except Exception as e:
         raise RuntimeError(f"Cognee recall() failed for query='{query}': {e}")
 
+from cognee.api.v1.search import SearchType
+
+async def recall_baseline(query: str) -> dict:
+    """
+    Queries Cognee's vector search (chunks only) for baseline comparison.
+    """
+    try:
+        results = await cognee.search(SearchType.CHUNKS, query_text=query)
+        raw_results = []
+        for res in results:
+            if hasattr(res, "model_dump"):
+                raw_results.append(res.model_dump())
+            elif hasattr(res, "__dict__"):
+                raw_results.append(res.__dict__)
+            else:
+                raw_results.append(str(res))
+                
+        return {"results": raw_results}
+    except Exception as e:
+        raise RuntimeError(f"Cognee recall_baseline() failed for query='{query}': {e}")
+
 async def forget(target: str, reason: str) -> dict:
     """
     Removes or down-weights the specified entity/claim in Cognee.
