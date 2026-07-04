@@ -15,6 +15,7 @@ class RecallRequest(BaseModel):
 class RecallResponse(BaseModel):
     answer: str
     raw_path: List[Dict[str, Any]]
+    path: List[str] = []
 
 class ForgetRequest(BaseModel):
     target: str
