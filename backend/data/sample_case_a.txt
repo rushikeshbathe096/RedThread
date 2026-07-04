@@ -1,0 +1,9 @@
+On October 12, 2023, an investigation was initiated regarding suspicious transfers originating from Global Trade Corp. The company, an international logistics organization, had recently seen a change in leadership when Julian Barnes took over as the Chief Financial Officer.
+
+During a routine audit, it was discovered that Julian Barnes had authorized a series of large payments to an offshore entity. Further analysis of the transaction records revealed that the funds were sent to a cryptocurrency wallet, specifically wallet address 0x9A4bC3F8D.
+
+The security team traced the blockchain activity associated with 0x9A4bC3F8D and found that the funds were frequently cashed out at physical crypto ATMs located in Geneva. The local authorities in Geneva reviewed the surveillance footage near these ATMs.
+
+The footage clearly identified a woman named Elena Rostova accessing the ATM on multiple occasions immediately following the transfers from Global Trade Corp. Elena Rostova is known to operate as an independent contractor, offering consultancy services, though she has no official ties on record with the logistics organization.
+
+Thus, the funds flowed directly from Global Trade Corp, authorized by Julian Barnes, to the crypto wallet 0x9A4bC3F8D, which was ultimately accessed by Elena Rostova in Geneva.
