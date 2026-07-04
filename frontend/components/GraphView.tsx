@@ -7,6 +7,7 @@ import { GraphData } from "@/lib/types";
 interface GraphViewProps {
   data: GraphData;
   highlightedPath: string[]; // List of node IDs to highlight
+  overlapNodes?: string[];
 }
 
 // Color nodes by type field
@@ -19,8 +20,19 @@ const NODE_COLORS: Record<string, string> = {
   default: "#9ca3af",     // gray
 };
 
-export default function GraphView({ data, highlightedPath }: GraphViewProps) {
+export default function GraphView({ data, highlightedPath, overlapNodes = [] }: GraphViewProps) {
   const fgRef = useRef<any>();
+
+  // To keep animation running even when graph settles
+  useEffect(() => {
+    let interval: any;
+    if (overlapNodes.length > 0) {
+      interval = setInterval(() => {
+         // trigger redraw but keep simulation stopped if it was
+      }, 50);
+    }
+    return () => clearInterval(interval);
+  }, [overlapNodes]);
 
   const getNodeColor = (type: string) => {
     const t = (type || "").toLowerCase();
@@ -59,6 +71,19 @@ export default function GraphView({ data, highlightedPath }: GraphViewProps) {
               return getNodeColor(node.type || "");
             }}
             nodeRelSize={6}
+            nodeCanvasObjectMode={() => "before"}
+            nodeCanvasObject={(node: any, ctx, globalScale) => {
+              if (overlapNodes.includes(node.id)) {
+                const r = 8 + (Math.sin(Date.now() / 200) + 1) * 2;
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, r, 0, 2 * Math.PI, false);
+                ctx.fillStyle = 'rgba(59, 130, 246, 0.4)';
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(59, 130, 246, 0.8)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+              }
+            }}
             linkColor={(link: any) => {
               const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
               const targetId = typeof link.target === 'object' ? link.target.id : link.target;
@@ -69,7 +94,10 @@ export default function GraphView({ data, highlightedPath }: GraphViewProps) {
               ) {
                 return "#ffffff";
               }
-              return "#333333";
+              const conf = typeof link.confidence === 'number' ? link.confidence : 1.0;
+              // Map confidence 0-1 to opacity 0.1-1.0
+              const opacity = Math.max(0.1, conf);
+              return `rgba(150, 150, 150, ${opacity})`;
             }}
             linkWidth={(link: any) => {
               const sourceId = typeof link.source === 'object' ? link.source.id : link.source;

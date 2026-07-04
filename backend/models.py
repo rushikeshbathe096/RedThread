@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Optional, Dict, Any
 
 class RememberRequest(BaseModel):
     content: str
@@ -20,7 +20,11 @@ class RecallResponse(BaseModel):
 class ForgetRequest(BaseModel):
     target: str
     reason: str
+    confidence: float = 1.0
+    query: Optional[str] = None
 
 class ForgetResponse(BaseModel):
     status: str
     affected_edges: int
+    previous_answer: Optional[str] = None
+    updated_answer: Optional[str] = None

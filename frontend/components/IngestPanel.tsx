@@ -7,7 +7,7 @@ import { STREAM_URL } from "@/lib/api";
 interface IngestPanelProps {
   onEvent: (type: string, data: any) => void;
   onStart: () => void;
-  onComplete: () => void;
+  onComplete: (source_name: string) => void;
 }
 
 export default function IngestPanel({ onEvent, onStart, onComplete }: IngestPanelProps) {
@@ -41,7 +41,7 @@ export default function IngestPanel({ onEvent, onStart, onComplete }: IngestPane
             try {
               const parsed = JSON.parse(line.slice(6));
               if (parsed.type === "done") {
-                onComplete();
+                onComplete(formData.get("source_name") as string);
                 setIsIngesting(false);
                 return;
               } else if (parsed.type === "error") {

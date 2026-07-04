@@ -5,7 +5,7 @@ import { Search } from "lucide-react";
 import { recall } from "@/lib/api";
 
 interface RecallPanelProps {
-  onHighlight: (path: string[]) => void;
+  onHighlight: (path: string[], query?: string) => void;
 }
 
 export default function RecallPanel({ onHighlight }: RecallPanelProps) {
@@ -23,7 +23,9 @@ export default function RecallPanel({ onHighlight }: RecallPanelProps) {
       const res = await recall({ query });
       setAnswer(res.answer);
       if (res.path && res.path.length > 0) {
-        onHighlight(res.path);
+        onHighlight(res.path, query);
+      } else {
+        onHighlight([], query);
       }
     } catch (e) {
       console.error(e);

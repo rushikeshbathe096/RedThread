@@ -38,4 +38,10 @@ export async function getGraph(): Promise<GraphData> {
   return res.json();
 }
 
+export async function getOverlap(caseA: string, caseB: string): Promise<{overlap: any[]}> {
+  const res = await fetch(`${API_BASE}/overlap?case_a=${encodeURIComponent(caseA)}&case_b=${encodeURIComponent(caseB)}`);
+  if (!res.ok) throw new Error("Failed to fetch overlap");
+  return res.json();
+}
+
 export const STREAM_URL = `${API_BASE}/ingest/stream`;

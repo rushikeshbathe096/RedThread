@@ -10,6 +10,27 @@ cognee.config.set_llm_provider("gemini")
 cognee.config.set_llm_model("gemini/gemini-2.0-flash")
 cognee.config.set_llm_api_key(GEMINI_API_KEY)
 
+# Global dictionary to track confidence levels for specific claims/edges (label -> confidence)
+EDGE_CONFIDENCE = {}
+
+def get_edge_confidences():
+    return EDGE_CONFIDENCE
+
+def set_edge_confidence(target: str, confidence: float):
+    EDGE_CONFIDENCE[target] = confidence
+
+def find_overlap(dataset_a_nodes: list, dataset_b_nodes: list) -> list[dict]:
+    """
+    Compares entity identifiers across two node lists using simple normalization.
+    """
+    overlap = []
+    b_normalized = {str(n.get("label", n.get("id", ""))).lower().strip(): n for n in dataset_b_nodes}
+    for a in dataset_a_nodes:
+        label_a = str(a.get("label", a.get("id", ""))).lower().strip()
+        if label_a in b_normalized:
+            overlap.append(a)
+    return overlap
+
 async def remember(content: str, source_name: str) -> dict:
     """
     Ingests content into Cognee, triggers graph construction, and returns the raw ingestion result.

@@ -21,11 +21,15 @@ export interface RecallResponse {
 export interface ForgetRequest {
   target: string;
   reason: string;
+  confidence?: number;
+  query?: string;
 }
 
 export interface ForgetResponse {
   status: string;
   affected_edges: number;
+  previous_answer?: string;
+  updated_answer?: string;
 }
 
 export interface Node {
@@ -38,6 +42,7 @@ export interface Edge {
   source: string;
   target: string;
   label: string;
+  confidence?: number;
 }
 
 export interface GraphData {
