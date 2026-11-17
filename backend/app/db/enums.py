@@ -1,0 +1,76 @@
+import enum
+
+
+class OrgRole(str, enum.Enum):
+    ORGANIZATION_ADMIN = "ORGANIZATION_ADMIN"
+    INVESTIGATOR = "INVESTIGATOR"
+    REVIEWER = "REVIEWER"
+    VIEWER = "VIEWER"
+
+
+class CaseStatus(str, enum.Enum):
+    ACTIVE = "ACTIVE"
+    ARCHIVED = "ARCHIVED"
+    CLOSED = "CLOSED"
+
+
+class DocumentType(str, enum.Enum):
+    PDF = "PDF"
+    DOCX = "DOCX"
+    TXT = "TXT"
+    EMAIL = "EMAIL"
+    SPREADSHEET = "SPREADSHEET"
+
+
+class IngestionStatus(str, enum.Enum):
+    QUEUED = "QUEUED"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    RETRYING = "RETRYING"
+    DEAD_LETTER = "DEAD_LETTER"
+
+
+class EntityType(str, enum.Enum):
+    PERSON = "PERSON"
+    ORGANIZATION = "ORGANIZATION"
+    FINANCIAL_ACCOUNT = "FINANCIAL_ACCOUNT"
+    LOCATION = "LOCATION"
+    DATE_TIME = "DATE_TIME"
+    DOCUMENT = "DOCUMENT"
+    TRANSACTION = "TRANSACTION"
+    CONCEPT = "CONCEPT"
+
+
+class ClaimType(str, enum.Enum):
+    ENTITY_TO_ENTITY = "ENTITY_TO_ENTITY"
+    ENTITY_TO_LITERAL = "ENTITY_TO_LITERAL"
+
+
+class ClaimStatus(str, enum.Enum):
+    ACTIVE = "ACTIVE"
+    DISPUTED = "DISPUTED"
+    RETRACTED = "RETRACTED"
+
+
+class ReviewOutcome(str, enum.Enum):
+    PENDING = "PENDING"
+    UPHELD = "UPHELD"
+    REJECTED = "REJECTED"
+    INCONCLUSIVE = "INCONCLUSIVE"
+
+
+class ClaimEventType(str, enum.Enum):
+    CLAIM_CREATED = "CLAIM_CREATED"
+    CLAIM_CHALLENGED = "CLAIM_CHALLENGED"
+    EVIDENCE_ATTACHED = "EVIDENCE_ATTACHED"
+    CLAIM_REVIEWED = "CLAIM_REVIEWED"
+    CLAIM_RETRACTED = "CLAIM_RETRACTED"
+    CLAIM_REINSTATED = "CLAIM_REINSTATED"
+
+
+class OutboxStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    PUBLISHED = "PUBLISHED"
+    FAILED = "FAILED"

@@ -84,6 +84,7 @@ Key architectural choices are formally documented in the `docs/decisions/` direc
 
 * **[Final Documentation Audit Report](audits/FINAL_DOCUMENTATION_AUDIT.md)**: Exhaustive adversarial technical audit of the complete 39-document specification suite, cross-document consistency proofs, normalization verification, and defect classifications.
 * **[Implementation Readiness Checklist](audits/IMPLEMENTATION_READINESS_CHECKLIST.md)**: Gate-by-gate verification matrix spanning Phase 0 through Phase 7, schema DDL checklists, security policies, and acceptance criteria.
+* **[Phased Implementation Plan](audits/PHASED_IMPLEMENTATION_PLAN.md)**: Granular decomposition of all 10 modules into 8 execution phases comprising 45 discrete engineering tasks.
 
 ---
 

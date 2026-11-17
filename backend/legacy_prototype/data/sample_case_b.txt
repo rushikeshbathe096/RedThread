@@ -1,0 +1,7 @@
+On November 5, 2023, local police in London arrested a suspect named Arthur Pendelton for a large-scale phishing scam. Arthur, operating under the alias 'TechSecure', had been targeting elderly individuals and tricking them into revealing their bank details.
+
+During the raid on his apartment, investigators seized several laptops and hardware wallets. A forensic analysis of Arthur Pendelton's transaction history revealed that he had been laundering his illicit profits through a specific cryptocurrency wallet to obscure the money trail. 
+
+The wallet address identified in his laundering scheme was exactly 0x9A4bC3F8D. 
+
+Authorities noted that this wallet was highly active and seemed to act as a central mixing node for multiple illicit income streams before the funds were ultimately withdrawn at physical locations across Europe. Arthur Pendelton refused to cooperate with the authorities regarding who else might have access to the wallet 0x9A4bC3F8D.
