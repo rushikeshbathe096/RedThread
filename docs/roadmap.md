@@ -67,7 +67,7 @@ gantt
 - Granular offset tracking (document ID, page number, character start/end coordinates).
 - Weighted entity resolution ($S = 0.35N + 0.25A + 0.25C + 0.15T$).
 - Alias indexing in `entity_aliases` and manual review queue.
-- Reversible entity merge and unmerge operations with `entity_merges` snapshots.
+- Reversible entity merge and unmerge operations via pointer hierarchy (`merged_into_id`) and immutable `entity_merge_events` ledger.
 - Idempotent PostgreSQL-to-Cognee graph synchronization worker.
 - *Acceptance Gate*: Entities and claims committed to PostgreSQL and synced to Cognee; unmerge restores pre-merge state.
 

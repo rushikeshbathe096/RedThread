@@ -18,12 +18,13 @@ However, in an investigative intelligence platform:
 We eliminate the redundant `relationships` table. **`claims` is the single canonical representation of all assertions and graph edges in RedThread.**
 
 ### Structural Mapping:
-- **Entity-to-Entity Edge**: `claims (subject_entity_id, predicate, object_entity_id)`
+- **Entity-to-Entity Edge**: `claims (subject_entity_id, predicate, object_entity_id)` with `claim_type = 'ENTITY_TO_ENTITY'`
   - Directly maps to a directed knowledge graph edge: `(Subject) -[Predicate]-> (Object)`.
-- **Entity-to-Literal Attribute**: `claims (subject_entity_id, predicate, object_value)`
+- **Entity-to-Literal Attribute**: `claims (subject_entity_id, predicate, object_value)` with `claim_type = 'ENTITY_TO_LITERAL'`
   - Directly maps to an entity attribute or literal assertion (e.g. `$50,000` or `12 March 2026`).
+- **Structured Qualifiers**: Sourced in `qualifiers` (`JSONB`).
 - **Graph Traversal & Visualization**:
-  - Graph views query `claims WHERE status = 'ACTIVE'`.
+  - Graph views query `claims WHERE status = 'ACTIVE' AND claim_type = 'ENTITY_TO_ENTITY'`.
   - Disputed edges query `claims WHERE status = 'DISPUTED'` and render with alert styling.
 
 ## Consequences

@@ -1,7 +1,7 @@
-# RedThread Entity Resolution System
+# RedThread Entity Resolution System Specification
 
 > **Document Status**: `DESIGN`  
-> **Core Pipeline**: Multi-attribute ranking, candidate generation, human-in-the-loop review queues, and reversible merge history.
+> **Core Pipeline**: Multi-attribute ranking, candidate generation, manual review queues, and pointer-based reversible merge history.
 
 ---
 
@@ -23,7 +23,7 @@ flowchart TD
     A[Incoming Extracted Entity] --> B[Text Normalization & Unicode Cleaning]
     B --> C{Exact Alias or Canonical Match?}
     C -- Yes --> D[Link to Existing Entity ID]
-    C -- No --> E[Candidate Retrieval Pool<br/>RapidFuzz + Trigram + Embedding]
+    C -- No --> E[Candidate Retrieval Pool<br/>RapidFuzz + GIN Trigram + Embedding]
     E --> F[Multi-Attribute Weighted Scoring S]
     F --> G{Evaluate Ranking Score S}
     G -- "S >= 0.90" --> H[High-Confidence Candidate<br/>Auto-link as Alias in entity_aliases]
@@ -62,36 +62,55 @@ $$S = 0.35N + 0.25A + 0.25C + 0.15T$$
 
 ---
 
-## 4. Reversible Merges & Unmerge Workflow
+## 4. Reversible Merges & Unmerge Workflow (Pointer-Based Design)
 
-### 4.1 Why Unmerging is Mandatory
-In financial and criminal investigations, an investigator might initially believe "John Smith" at Company A is the same "John Smith" at Company B and merge them. If subsequent forensic evidence proves they are distinct individuals, an irreversible merge corrupts hundreds of claims and graph edges.
+### 4.1 Why Pointer-Based Merging is Mandatory
+In financial and criminal investigations, an investigator might initially believe "John Smith" at Company A is the same "John Smith" at Company B and merge them. If subsequent forensic evidence proves they are distinct individuals, an irreversible merge or a crude JSON snapshot corrupts claims and edges.
 
-### 4.2 Reversible Merge Schema
+### 4.2 Relational Model & Schema
+1. **Source Claims Remain Untouched**: Claims continue to point directly to the entity UUID extracted from the document (`subject_entity_id = A`).
+2. **Canonical Pointer on Entity**: `entities.merged_into_id` (`UUID NULL REFERENCES entities(id)`).
+3. **Audit Ledger**:
 ```sql
-CREATE TABLE entity_merges (
+CREATE TABLE entity_merge_events (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    target_entity_id UUID NOT NULL REFERENCES entities(id) ON DELETE RESTRICT,
-    source_entity_id UUID NOT NULL REFERENCES entities(id) ON DELETE RESTRICT,
+    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
+    source_entity_id UUID NOT NULL,
+    target_entity_id UUID NOT NULL,
     merged_by UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     reason TEXT NOT NULL,
-    snapshot_relationships JSONB NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    unmerged_at TIMESTAMPTZ,
+    unmerged_by UUID REFERENCES users(id) ON DELETE RESTRICT,
+    CONSTRAINT chk_merge_distinct_entities CHECK (target_entity_id <> source_entity_id),
+    CONSTRAINT fk_merge_source_org FOREIGN KEY (organization_id, source_entity_id) 
+        REFERENCES entities(organization_id, id) ON DELETE RESTRICT,
+    CONSTRAINT fk_merge_target_org FOREIGN KEY (organization_id, target_entity_id) 
+        REFERENCES entities(organization_id, id) ON DELETE RESTRICT
 );
 ```
 
-### 4.3 Unmerge Execution Procedure
-When an investigator triggers an unmerge:
-1. `source_entity_id` is restored to `is_active = TRUE` in `entities`.
-2. Aliases and claims that originated from source documents citing the subsumed entity are repointed back to `source_entity_id`.
-3. Graph edges in Cognee are detached from the target entity and reattached to the source entity.
-4. An immutable audit record is logged in `audit_logs` (`action = 'ENTITY_UNMERGED'`).
+### 4.3 Transitive Resolution, Cycle Prevention & Unmerge Execution Procedure
+1. **Transitive Canonical Resolution**:
+   When entities are merged in sequence ($A \rightarrow B$ and later $B \rightarrow C$), queries resolve canonical entities via recursive pointer resolution (`fn_get_canonical_entity_id(UUID)` or `vw_canonical_entities`), walking until `merged_into_id IS NULL`. Single-step `COALESCE(e.merged_into_id, e.id)` is only valid for 1-hop merges; recursive resolution guarantees correct canonical attribution across arbitrary chains.
+2. **Cycle Prevention**:
+   The database trigger `trg_prevent_entity_merge_cycles` fires on `BEFORE INSERT OR UPDATE OF merged_into_id ON entities`. It traverses prospective parent pointers and aborts with a database exception if a cycle (e.g., $A \rightarrow B \rightarrow C \rightarrow A$) or excessive depth ($> 20$) is detected.
+3. **Unmerge Procedure**:
+   When an investigator triggers an unmerge for entity $A$:
+   ```sql
+   UPDATE entities SET merged_into_id = NULL, updated_at = NOW() WHERE id = :source_id;
+   UPDATE entity_merge_events SET unmerged_at = NOW(), unmerged_by = :actor_id 
+   WHERE source_entity_id = :source_id AND unmerged_at IS NULL;
+   ```
+4. **Evidentiary Integrity Guarantee**:
+   Because claims still reference original extracted entity UUIDs, **zero claims are rewritten or corrupted**.
+5. **Multi-Hop Unmerge Determinism**:
+   If intermediate entity $B$ is unmerged from $C$ in a chain $A \rightarrow B \rightarrow C$, $B$ becomes canonical (`B.merged_into_id = NULL`). $A$ continues pointing to $B$ (now canonical root). If $A$ was also mistakenly merged with $B$, an investigator unmerges $A$ independently.
 
 ---
 
 ## 5. Related Documents
-- [Database Design](database-design.md)
+- [Database Design Specification](database-design.md)
+- [Database Transactions Specification](database-transactions.md)
 - [API Specification](api-specification.md)
 - [ADR-005: Weighted Entity Resolution](decisions/ADR-005-weighted-entity-resolution.md)
-- [Definition of Done](definition-of-done.md)

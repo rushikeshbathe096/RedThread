@@ -1,4 +1,4 @@
-# RedThread Document Ingestion Pipeline
+# RedThread Document Ingestion Pipeline Specification
 
 > **Document Status**: `DESIGN`  
 > **Core Pipeline**: Asynchronous, reliable document ingestion, structured LLM extraction, transactional outbox publishing, and idempotent graph synchronization.
@@ -28,13 +28,13 @@ sequenceDiagram
 
     Client->>API: POST /cases/{id}/documents (multipart/form-data)
     API->>API: Validate MIME magic bytes & compute SHA-256
-    API->>S3: Upload raw file payload
+    API->>S3: Upload raw file payload (NO DB TRANSACTION HELD)
     Note over API,PG: Single Database Transaction
     API->>PG: Insert Document & IngestionJob (status: QUEUED)
     API->>PG: Insert OutboxEvent (DOCUMENT_INGESTION_REQUESTED)
     API-->>Client: 202 Accepted {job_id, document_id, status: "QUEUED"}
     
-    Relay->>PG: Poll PENDING OutboxEvents
+    Relay->>PG: Poll PENDING OutboxEvents (SKIP LOCKED)
     Relay->>Redis: Publish job to celery queue
     Relay->>PG: Mark OutboxEvent as PUBLISHED
     
@@ -46,7 +46,8 @@ sequenceDiagram
     Worker->>LLM: Request structured extraction (Entities, Claims, Offsets)
     LLM-->>Worker: Validated Pydantic Extraction Payload
     Worker->>Worker: Run Entity Resolution & Alias Linking
-    Worker->>PG: Insert Entities, Claims, ClaimSources
+    Note over Worker,PG: Atomic Persistence Transaction
+    Worker->>PG: Insert Entities, Claims, ClaimVersions, ClaimSources, ClaimEvents
     Worker->>Cognee: Sync graph nodes & edges (Idempotent)
     Worker->>PG: Update IngestionJob (status: COMPLETED)
     Worker-->>Client: Real-time update (SSE / Polling)
@@ -71,14 +72,6 @@ stateDiagram-v2
     COMPLETED --> [*]
 ```
 
-### State Definitions
-* **`QUEUED`**: Metadata written to PostgreSQL, file stored in S3, outbox event published to Redis.
-* **`PROCESSING`**: Worker has acquired the Redis distributed lock (`lock:document:{document_id}`) and is executing parsing or extraction.
-* **`COMPLETED`**: Chunks, entities, claims, and sources committed to PostgreSQL, and nodes/edges synchronized to Cognee.
-* **`FAILED`**: A transient error occurred (Gemini 429, network timeout).
-* **`RETRYING`**: Job awaiting exponential backoff delay before re-entering `PROCESSING`.
-* **`DEAD_LETTER`**: Reached maximum retry count (default: 3). Alert generated in `audit_logs`.
-
 ---
 
 ## 4. Multi-Format Parsers
@@ -101,7 +94,7 @@ During stage 6 of ingestion, chunks (typically 1,500 tokens with 200 token overl
 
 ```python
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 class ExtractedEntity(BaseModel):
     name: str = Field(description="Observed entity name in text")
@@ -110,12 +103,17 @@ class ExtractedEntity(BaseModel):
 class ExtractedClaim(BaseModel):
     subject: str = Field(description="Subject entity name")
     predicate: str = Field(description="Action or relationship, e.g., TRANSFERRED_TO, OWNS, EMPLOYED_BY")
+    claim_type: str = Field(description="ENTITY_TO_ENTITY or ENTITY_TO_LITERAL")
     target_entity: Optional[str] = Field(None, description="Target entity if object is an entity")
     target_value: Optional[str] = Field(None, description="Literal value if object is a literal (e.g. $50,000)")
+    qualifiers: Dict[str, Any] = Field(default_factory=dict, description="Structured attributes: amount, currency, date")
+    is_negated: bool = Field(default=False, description="Whether the source explicitly asserts negation")
     quoted_text: str = Field(description="Exact verbatim excerpt from document supporting this claim")
     page_number: int = Field(description="1-based page number")
-    start_offset: int = Field(description="Character start offset in chunk")
-    end_offset: int = Field(description="Character end offset in chunk")
+    doc_start_offset: int = Field(description="0-based character start offset in normalized document")
+    doc_end_offset: int = Field(description="0-based character end offset in normalized document")
+    chunk_local_start_offset: Optional[int] = Field(None, description="Character start offset in chunk")
+    chunk_local_end_offset: Optional[int] = Field(None, description="Character end offset in chunk")
     confidence: float = Field(description="Model extraction confidence score (0.0 to 1.0)")
 
 class ExtractionResult(BaseModel):
@@ -131,18 +129,17 @@ class ExtractionResult(BaseModel):
 
 ## 6. Fault Tolerance, Idempotency & Recovery
 
-1. **SHA-256 Content Deduplication**: Before processing, the document's SHA-256 hash is checked against the target case. If a duplicate is detected, the upload references the existing document, avoiding redundant LLM inference costs.
+1. **SHA-256 Content Deduplication**: `uq_case_document_hash` rejects duplicate uploads.
 2. **Distributed Job Locks**: Workers acquire a Redis lock on `lock:document:{document_id}` with a TTL of 10 minutes to prevent dual execution by concurrent workers.
-3. **Transactional Database Commits**: All chunks, entities, claims, and sources for a document are committed within a single database transaction. If the worker crashes halfway through, the transaction rolls back cleanly.
-4. **Idempotent Cognee Synchronization**: Graph nodes and edges are synchronized with deterministic UUIDs. Re-running synchronization on a retried job updates existing nodes without creating duplicates.
+3. **Atomic Multi-Table Commits**: Chunks, entities, claims, claim versions, and claim sources commit together. If an error occurs, the transaction rolls back cleanly.
+4. **Idempotent Cognee Synchronization**: Graph nodes and edges are synchronized with deterministic UUIDs. Re-running synchronization updates existing nodes without creating duplicates.
 5. **Exponential Backoff**:
    $$\text{Delay}(t) = \text{base\_delay} \times 2^{\text{attempt}} + \text{jitter}$$
-   Default: 5 seconds base delay $\rightarrow$ 10s $\rightarrow$ 20s $\rightarrow$ Dead letter.
 
 ---
 
 ## 7. Related Documents
-- [System Architecture](architecture.md)
 - [Database Design](database-design.md)
+- [Database Transactions](database-transactions.md)
 - [Data Consistency](data-consistency.md)
 - [ADR-002: Asynchronous Ingestion](decisions/ADR-002-asynchronous-ingestion-pipeline.md)

@@ -63,6 +63,30 @@ Key architectural choices are formally documented in the `docs/decisions/` direc
 
 ---
 
+## 🧩 Implementation Modules (MOD-01 through MOD-10)
+
+| Module ID | Module Document | Status | Scope & Key Responsibility |
+| :--- | :--- | :---: | :--- |
+| **MOD-01** | **[Auth & Organization Management](modules/module-01-auth-and-organization.md)** | `DESIGN` | Multi-tenant identity, Argon2id, rotating JWT sessions, and RBAC matrix. |
+| **MOD-02** | **[Case Management](modules/module-02-case-management.md)** | `DESIGN` | Case workspaces, membership assignments, lifecycle states, and metrics. |
+| **MOD-03** | **[Document Ingestion Pipeline](modules/module-03-document-ingestion.md)** | `DESIGN` | Multi-format parsers (PDF, DOCX, EML, CSV), Celery orchestration, outbox relay. |
+| **MOD-04** | **[Entity & Relationship Extraction](modules/module-04-entity-relationship-extraction.md)** | `DESIGN` | Gemini structured extraction, Pydantic validation, verbatim coordinate tracking. |
+| **MOD-05** | **[Entity Resolution](modules/module-05-entity-resolution.md)** | `DESIGN` | Calibrated scoring ($S$), alias index, review queue, pointer-based reversible merges. |
+| **MOD-06** | **[Knowledge Graph & Cross-Case](modules/module-06-knowledge-graph-cross-case.md)** | `DESIGN` | Graph topology, bounded BFS traversal ($N \le 4$), cross-case entity overlap discovery. |
+| **MOD-07** | **[Intelligent Recall & Grounded RAG](modules/module-07-intelligent-recall-rag.md)** | `DESIGN` | 13-stage hybrid recall pipeline, multi-hop answering, citation offsets, and fallback. |
+| **MOD-08** | **[Contradiction & Forgetting](modules/module-08-contradiction-forgetting.md)** | `DESIGN` | Claim lifecycle state machine, dispute challenges, review decisions, immutable ledger. |
+| **MOD-09** | **[Search, Analytics & Workspace](modules/module-09-search-analytics-workspace.md)** | `DESIGN` | Multi-faceted search, throughput analytics, interactive 3-panel UI workbench. |
+| **MOD-10** | **[Reports & Export](modules/module-10-reports-and-export.md)** | `DESIGN` | Immutable dossier snapshots (PDF, JSON, CSV), court/compliance export packages. |
+
+---
+
+## 🛡️ Audits & Engineering Governance
+
+* **[Final Documentation Audit Report](audits/FINAL_DOCUMENTATION_AUDIT.md)**: Exhaustive adversarial technical audit of the complete 39-document specification suite, cross-document consistency proofs, normalization verification, and defect classifications.
+* **[Implementation Readiness Checklist](audits/IMPLEMENTATION_READINESS_CHECKLIST.md)**: Gate-by-gate verification matrix spanning Phase 0 through Phase 7, schema DDL checklists, security policies, and acceptance criteria.
+
+---
+
 ## 📊 Benchmarks & Evaluations
 
 * **[Evaluation Framework](benchmarks/evaluation-framework.md)**: 200-question ground-truth benchmark suite, metrics (Recall@5, Precision@5, MRR, nDCG@10, Faithfulness), and test splits.

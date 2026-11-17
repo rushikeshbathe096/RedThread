@@ -51,7 +51,7 @@ flowchart TD
     
     subgraph Outbox Relay & Task Queue
         Relay[Transactional Outbox Relay]
-        PG -.->|2. Poll Pending Outbox| Relay
+        PG -.->|2. Poll Pending Outbox (SKIP LOCKED)| Relay
         Relay -->|3. Enqueue Celery Task| Redis
     end
     
@@ -112,8 +112,8 @@ A fundamental rule of RedThread is that **PostgreSQL is the source of truth, and
 PostgreSQL 16 (Authoritative Source of Truth)
 ├── Multi-tenancy & IAM (Users, Organizations, Memberships, Case Access)
 ├── File Metadata & Ingestion State Machine (Documents, Chunks, Jobs)
-├── Canonical Evidence Ledger (Claims, Claim Sources, Claim Events)
-├── Reversible Entity Resolution (Entities, Aliases, Entity Merges)
+├── Canonical Evidence Ledger (Claims, Claim Versions, Claim Sources, Claim Events)
+├── Reversible Entity Resolution (Entities, Aliases, Entity Merge Events)
 └── Outbox Events & Audit Logs
 
 Cognee (Derived Graph & Retrieval Accelerator)
@@ -133,12 +133,12 @@ Cognee (Derived Graph & Retrieval Accelerator)
 ### 5.1 Transactional Outbox Pattern
 To prevent distributed transaction failures between PostgreSQL and Redis:
 1. When a document upload is accepted, the API writes the document record and inserts a `DOCUMENT_INGESTION_REQUESTED` row into `outbox_events` in the **same database transaction**.
-2. An asynchronous outbox publisher reads pending outbox events and pushes tasks to Redis.
+2. An asynchronous outbox publisher polls pending outbox events using `SELECT ... FOR UPDATE SKIP LOCKED` and pushes tasks to Redis.
 3. This guarantees that a document record is never orphaned without a corresponding processing task.
 
 ### 5.2 Independently Retryable & Idempotent Graph Synchronization
 Because external network calls to Cognee or Gemini cannot be rolled back by PostgreSQL database transactions:
-- The worker executes database writes (persisting entities and claims) **first**.
+- The worker executes database writes (persisting chunks, entities, claims, claim versions) **first**.
 - Next, the worker synchronizes entities and relationships into Cognee using an **idempotent sync function** (keyed by entity and claim UUIDs).
 - If Cognee synchronization fails due to a network timeout or provider outage, the job is transitioned to `FAILED` with retry backoff.
 - On retry, existing database records are recognized via unique constraints, and the synchronization resumes without creating duplicate nodes or edges.
@@ -165,3 +165,11 @@ Because external network calls to Cognee or Gemini cannot be rolled back by Post
 4. Filter out retracted claims, flag disputed claims, and verify all claims belong to authorized cases.
 5. Synthesize grounded answer via Gemini using strictly formatted citations (`[Claim #ID]`).
 6. Return answer, verified graph path, and source citations.
+
+---
+
+## 7. Related Documents
+- [Database Design](database-design.md)
+- [Database Transactions](database-transactions.md)
+- [Database Security](database-security.md)
+- [Data Consistency](data-consistency.md)

@@ -13,24 +13,30 @@ In RedThread, **contradictions do not silently erase historical information**. T
 
 ---
 
-## 2. Claim State Machine & Event Tracking
+## 2. Claim State Machine & Decoupled Review Outcomes
+
+RedThread explicitly decouples operational **Claim Status** (`ACTIVE`, `DISPUTED`, `RETRACTED`) from investigative **Review Outcome** (`PENDING`, `UPHELD`, `REJECTED`, `INCONCLUSIVE`).
 
 ```mermaid
 stateDiagram-v2
-    [*] --> ACTIVE
+    [*] --> ACTIVE : Extracted (outcome: PENDING)
     ACTIVE --> DISPUTED : Challenge initiated
-    DISPUTED --> REVIEWED : Reviewer evaluates
-    REVIEWED --> ACTIVE : Upheld
-    REVIEWED --> RETRACTED : Withdrawn from active queries
-    RETRACTED --> ACTIVE : Reinstated
+    DISPUTED --> ACTIVE : Upheld (outcome: UPHELD)
+    DISPUTED --> RETRACTED : Refuted (outcome: REJECTED)
+    DISPUTED --> DISPUTED : Inconclusive (outcome: INCONCLUSIVE)
+    RETRACTED --> ACTIVE : Reinstated if counter-evidence debunked
+    RETRACTED --> [*]
+    ACTIVE --> [*]
 ```
 
-### Event Logging (`claim_events`)
-Every transition writes an immutable event row recording:
-- `event_type`: `CLAIM_CHALLENGED`, `CLAIM_REVIEWED`, `CLAIM_RETRACTED`, `CLAIM_REINSTATED`.
+### Event Logging (`claim_events`) & Snapshot History (`claim_versions`)
+Every mutation writes an immutable row to both `claim_versions` (full content snapshot) and `claim_events` (transition audit ledger):
+- `event_type`: `CLAIM_CREATED`, `CLAIM_CHALLENGED`, `EVIDENCE_ATTACHED`, `CLAIM_REVIEWED`, `CLAIM_RETRACTED`, `CLAIM_REINSTATED`.
 - `actor_id`: UUID of the investigator or reviewer.
+- `prior_status` / `new_status`: Operational status transition.
+- `prior_review_outcome` / `new_review_outcome`: Review outcome transition.
 - `reason`: Justification text explaining the challenge or retraction.
-- `metadata`: Counter-document IDs and page references.
+- `metadata`: Counter-document IDs, chunk references, and page numbers.
 
 ---
 

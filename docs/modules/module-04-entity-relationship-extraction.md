@@ -17,17 +17,20 @@ The extraction module decomposes the sentence into:
   - `John Smith` (`PERSON`)
   - `Global Trade Corporation` (`ORGANIZATION`)
   - `Account AX91` (`FINANCIAL_ACCOUNT`)
-  - `$50,000` (`MONETARY_AMOUNT`)
-  - `12 March 2026` (`DATE_TIME`)
-- **Relationships / Claims**:
+- **Canonical Claims & Typed Qualifiers**:
   - `John Smith` $\xrightarrow{\text{TRANSFERRED\_TO}}$ `Global Trade Corporation`
+    - `claim_type`: `ENTITY_TO_ENTITY`
+    - `qualifiers`: `{"amount": 50000, "currency": "USD", "date": "2026-03-12"}`
   - `John Smith` $\xrightarrow{\text{USED\_ACCOUNT}}$ `Account AX91`
-  - `Global Trade Corporation` $\xrightarrow{\text{RECEIVED\_AMOUNT}}$ `$50,000`
-- **Source Offsets**:
+    - `claim_type`: `ENTITY_TO_ENTITY`
+- **Source Provenance & Offsets**:
   - `document_id`: `doc_101`
+  - `chunk_id`: `chunk_204`
   - `page_number`: 4
-  - `start_offset`: 1240
-  - `end_offset`: 1342
+  - `doc_start_offset`: 1240
+  - `doc_end_offset`: 1342
+  - `chunk_local_start_offset`: 40
+  - `chunk_local_end_offset`: 142
   - `quoted_text`: Verbatim sentence above
 
 ---

@@ -206,13 +206,28 @@ List endpoints support standard pagination:
   "reason": "Corporate filing demonstrates TCS is the recognized alias for Tata Consultancy Services."
 }
 ```
-- **Response (200 OK)**: Merge confirmation and snapshot ID.
+- **Response (200 OK)**:
+```json
+{
+  "merge_id": "merge_33a1b2c4",
+  "canonical_target_id": "ent_canonical_uuid",
+  "subsumed_source_id": "ent_99a8b7c6",
+  "status": "MERGED"
+}
+```
 
 ### 6.4 Unmerge Entities
 - **Method & Path**: `POST /entities/{id}/unmerge`
 - **Required Role**: `INVESTIGATOR` or `ORGANIZATION_ADMIN`
-- **Request Body**: `{"merge_id": "merge_uuid"}`
-- **Response (200 OK)**: Unmerge confirmation with restored entity IDs.
+- **Request Body**: `{"source_entity_id": "ent_99a8b7c6"}`
+- **Response (200 OK)**:
+```json
+{
+  "restored_entity_id": "ent_99a8b7c6",
+  "status": "RESTORED",
+  "unmerged_at": "2026-11-18T02:30:00Z"
+}
+```
 
 ---
 
@@ -234,7 +249,11 @@ List endpoints support standard pagination:
       "source": "ent_1",
       "target": "ent_2",
       "predicate": "TRANSFERRED_TO",
+      "claim_type": "ENTITY_TO_ENTITY",
+      "qualifiers": {"amount": 50000, "currency": "USD"},
+      "is_negated": false,
       "status": "DISPUTED",
+      "review_outcome": "PENDING",
       "confidence": 0.95
     }
   ]
@@ -261,6 +280,8 @@ List endpoints support standard pagination:
       "document_id": "doc_1",
       "document_filename": "wire_memo.pdf",
       "page": 4,
+      "doc_start_offset": 1240,
+      "doc_end_offset": 1342,
       "snippet": "John Smith transferred $50,000 to Global Trade Corp through Account AX91."
     }
   ],
@@ -280,10 +301,11 @@ List endpoints support standard pagination:
 ```json
 {
   "reason": "Doc #45 proves credentials compromised before transfer.",
-  "counter_document_id": "doc_45"
+  "counter_document_id": "doc_45",
+  "expected_version": 1
 }
 ```
-- **Response (200 OK)**: Claim status updated to `DISPUTED`.
+- **Response (200 OK)**: Claim status updated to `DISPUTED` with incremented version.
 
 ### 8.2 Review Claim
 - **Method & Path**: `POST /claims/{id}/review`
@@ -292,15 +314,45 @@ List endpoints support standard pagination:
 ```json
 {
   "review_outcome": "REJECTED",
-  "resulting_status": "RETRACTED",
-  "reason": "Forensic audit debunked attribution."
+  "reason": "Forensic audit debunked attribution.",
+  "expected_version": 2
 }
 ```
 - **Response (200 OK)**: Claim status updated to `RETRACTED` and review outcome set to `REJECTED`.
 
-### 8.3 Get Claim History
+### 8.3 Get Claim History & Versions
 - **Method & Path**: `GET /claims/{id}/history`
-- **Response (200 OK)**: Chronological array of `claim_events`.
+- **Response (200 OK)**:
+```json
+{
+  "claim_id": "claim_101",
+  "current_version": 3,
+  "versions": [
+    {
+      "version": 1,
+      "status": "ACTIVE",
+      "review_outcome": "PENDING",
+      "change_reason": "Initial extraction",
+      "created_at": "2026-11-10T12:00:00Z"
+    },
+    {
+      "version": 2,
+      "status": "DISPUTED",
+      "review_outcome": "PENDING",
+      "change_reason": "Investigator challenge",
+      "created_at": "2026-11-12T14:30:00Z"
+    },
+    {
+      "version": 3,
+      "status": "RETRACTED",
+      "review_outcome": "REJECTED",
+      "change_reason": "Forensic audit debunked attribution",
+      "created_at": "2026-11-15T09:15:00Z"
+    }
+  ],
+  "events": [...]
+}
+```
 
 ---
 

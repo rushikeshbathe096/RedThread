@@ -1,4 +1,4 @@
-# RedThread Security Model & Multi-Tenancy
+# RedThread Security Model & Multi-Tenancy Specification
 
 > **Document Status**: `DESIGN`  
 > **Security Baseline**: Zero Trust internal architecture, strict tenant and case isolation, and verifiable evidence immutability.
@@ -8,11 +8,11 @@
 ## 1. Security Architecture & Threat Mitigation
 
 In an investigative intelligence platform handling sensitive corporate, financial, and legal records, confidentiality, integrity, and strict non-repudiation are paramount. RedThread is built on three core security pillars:
-- **Tenant Isolation**: Organizations must never see, query, or infer each other's data under any condition.
-- **Need-to-Know Access**: Access is controlled at both the organization level and individual case workspaces.
-- **Evidence Immutability**: Historical evidence cannot be deleted or mutated without an auditable trace in `claim_events` and `audit_logs`.
+- **Tenant Isolation**: Organizations must never see, query, or infer each other's data under any condition. Enforced by both PostgreSQL composite foreign keys and Row-Level Security (RLS).
+- **Need-to-Know Access**: Access is controlled at both the organization level (`memberships`) and individual case workspaces (`case_members`).
+- **Evidence Immutability**: Historical evidence cannot be deleted or mutated without an auditable trace in `claim_versions`, `claim_events`, and `audit_logs`.
 
-For threat analysis and attack vector mitigations, consult the [Threat Model](threat-model.md).
+For threat analysis and attack vector mitigations, consult the [Threat Model](threat-model.md) and [Database Security](database-security.md).
 
 ---
 
@@ -39,10 +39,14 @@ RedThread enforces a four-tier role hierarchy applied at the organization level,
 
 ## 3. Multi-Tenancy & IDOR Prevention
 
-### 3.1 Tenant Isolation Strategy
-Every database query is bound to two strict scopes:
-1. `organization_id`: Invariant boundary derived exclusively from the authenticated user's JWT session.
-2. `case_id`: Explicit case boundary requiring an active entry in `case_members` (or an Organization Admin override).
+### 3.1 Composite Foreign Key Tenancy Invariant
+Database constraints enforce organization and case boundaries at the engine level:
+1. `(organization_id, case_id) REFERENCES cases(organization_id, id)`
+2. `(organization_id, subject_entity_id) REFERENCES entities(organization_id, id)`
+3. `(case_id, claim_id) REFERENCES claims(case_id, id)`
+4. `(case_id, document_id) REFERENCES documents(case_id, id)`
+
+Even if application code fails, PostgreSQL physically rejects cross-tenant or cross-case associations.
 
 ### 3.2 IDOR Prevention Guard
 To prevent Insecure Direct Object References (e.g., an investigator guessing a document or claim UUID belonging to another organization), every service call passes through a tenancy validation guard:
@@ -88,7 +92,7 @@ Passwords are never stored in plaintext. RedThread uses `argon2-cffi` configured
 - **Parallelism ($p$)**: 4 threads
 
 ### 4.2 JWT Access & Refresh Token Rotation
-- **Access Tokens**: Short-lived (15 minutes), signed with asymmetric RS256 or hardened HS256 (256-bit entropy secret). Contains `sub` (User ID), `org_id`, and `role`.
+- **Access Tokens**: Short-lived (15 minutes), signed with asymmetric RS256 or hardened HS256. Contains `sub` (User ID), `org_id`, and `role`.
 - **Refresh Tokens**: Long-lived (7 days), stored in the database exclusively as a SHA-256 hash. 
 - **Revocation**: Refresh tokens are rotated on each exchange. If a used refresh token is presented again, all child tokens are immediately revoked (reuse detection).
 
@@ -124,18 +128,18 @@ Investigative documents often contain untrusted third-party text, which may mali
 
 ## 7. Audit Logging & Non-Repudiation
 
-Every evidence mutation produces an immutable row in `audit_logs`:
-- Document uploads and deletions
+Every evidence mutation produces an immutable row in `audit_logs` and `claim_events`:
+- Document uploads and archival
 - Claim challenges, reviews, retractions, and reinstatements
 - Role modifications and organization membership changes
 - AI recall queries executed (query text, retrieved claims, returned answer)
 
-Audit logs are append-only. The database user role used by the application service is granted `INSERT` and `SELECT` permissions on `audit_logs`, with `UPDATE` and `DELETE` explicitly prohibited by database triggers.
+Audit logs are append-only. The database user role used by the application service is granted `INSERT` and `SELECT` permissions on `audit_logs`, with `UPDATE` and `DELETE` explicitly prohibited by database triggers and permissions.
 
 ---
 
 ## 8. Related Documents
-- [Threat Model](threat-model.md)
+- [Database Security & RLS](database-security.md)
 - [Database Design](database-design.md)
-- [API Specification](api-specification.md)
+- [Threat Model](threat-model.md)
 - [Definition of Done](definition-of-done.md)

@@ -1,93 +1,188 @@
-# RedThread Data Consistency, CAP Theorem & Synchronization Architecture
+# RedThread Distributed Data Consistency, Transactional Outbox & Eventual Synchronization
 
 > **Document Status**: `DESIGN`  
-> **Role**: Distributed Consistency, CAP Analysis, Outbox Pattern, and Failure Recovery  
-> **Core Principle**: PostgreSQL guarantees ACID Strong Consistency for truth; Cognee and Redis provide Eventual Consistency for performance and async transport.
+> **Role**: Distributed Consistency, Outbox State Machine, Idempotent Processing, and Self-Healing Reconciliation  
+> **Target System**: PostgreSQL 16 $\leftrightarrow$ Redis 7 $\leftrightarrow$ Celery 5.4+ $\leftrightarrow$ Cognee Cloud Engine  
+> **Core Distributed Invariant**: **At-Least-Once Delivery with Idempotent Processing**. PostgreSQL is strongly consistent (CP); the derived Cognee graph projection is eventually consistent (AP).
 
 ---
 
-## 1. CAP Theorem & Consistency Model
+## 1. The Distributed Ingestion & Synchronization Challenge
 
-RedThread's distributed topology comprises five distinct systems:
-1. **PostgreSQL 16**: Primary ACID Relational Store.
-2. **Redis 7**: Distributed Task Transport & Temporary Cache.
-3. **Celery Workers**: Stateless Distributed Compute.
-4. **Cognee Cloud / Local Engine**: Derived Graph Memory & Vector Accelerator.
-5. **S3-Compatible Object Store**: Raw Document Storage.
+RedThread coordinates state across multiple independent systems that do not share a two-phase commit (2PC) protocol:
+- **PostgreSQL 16**: Primary ACID database.
+- **S3-Compatible Object Storage**: Binary file payloads.
+- **Redis 7**: Distributed in-memory task broker.
+- **Cognee Cloud / Local Engine**: Derived knowledge graph index.
 
 ```mermaid
 flowchart TD
-    subgraph Strong Consistency Zone [CP / ACID Invariant]
-        PG[(PostgreSQL 16<br/>Authoritative Source of Truth)]
+    subgraph ACID Transaction Boundary [PostgreSQL 16]
+        Upload[Document Ingestion Request] --> DBCommit[Commit Metadata + Jobs + Outbox Event]
     end
     
-    subgraph Eventual Consistency Zone [AP / Derived Projections]
-        Redis[(Redis Queue & Cache)]
-        Worker[Celery Ingestion Workers]
-        Cognee[(Cognee Graph Engine)]
-        S3[(S3 Object Storage)]
+    subgraph Outbox Polling & Transport
+        DBCommit --> Outbox[(outbox_events Table)]
+        Outbox -->|SELECT FOR UPDATE SKIP LOCKED| Relay[Outbox Relay Daemon]
+        Relay -->|LPUSH / Celery Dispatch| Broker[(Redis 7 Task Broker)]
     end
     
-    PG -->|Transactional Outbox| Redis
-    Redis --> Worker
-    Worker -->|ACID Persistence| PG
-    Worker -->|Eventual Graph Sync| Cognee
-    Worker -->|Raw Payload| S3
+    subgraph Worker Execution Tier
+        Broker --> Worker[Celery Ingestion Worker]
+        Worker -->|ACID Evidence Commit| DBCommit
+        Worker -->|Idempotent Upsert| Cognee[(Cognee Graph Engine)]
+    end
+    
+    subgraph Self-Healing Reconciliation
+        Recon[Hourly Reconciliation Daemon] -.->|Audit Claims vs Cognee| DBCommit
+        Recon -.->|Repair Stale / Missing Edges| Cognee
+    end
 ```
 
-### 1.1 Data Consistency Classification Matrix
+---
 
-| Data Domain | Storage Engine | Required Consistency | Partition Behavior (P) | Recovery Mechanism |
-| :--- | :--- | :---: | :--- | :--- |
-| **User Credentials & Auth** | PostgreSQL | **Strong** | CP: Reject auth if DB is partitioned. | Immediate ACID rollback. |
-| **Organization Memberships** | PostgreSQL | **Strong** | CP: Prevent role elevation or unauthorized access. | ACID transaction. |
-| **Case Permissions & RBAC** | PostgreSQL | **Strong** | CP: Non-disclosing 404 on access denial. | ACID transaction. |
-| **Claims & Canonical Edges** | PostgreSQL | **Strong** | CP: Uncommitted claims are invisible to queries. | ACID transaction. |
-| **Claim Review History** | PostgreSQL | **Strong** | CP: Immutable event log; append-only. | Database triggers & constraints. |
-| **Document Metadata** | PostgreSQL | **Strong** | CP: File hash uniqueness strictly enforced. | Unique constraint rollback. |
-| **Ingestion Job State** | PostgreSQL | **Strong** | CP: Single source of truth for job lifecycle. | Distributed lock + atomic SQL state transition. |
-| **Redis Job Delivery** | Redis | **At Least Once** | AP: Task redelivered on worker timeout. | Idempotent consumers + distributed leases. |
-| **Cognee Graph Projection** | Cognee | **Eventual** | AP: Continues servicing reads; sync lags temporarily. | Idempotent background sync + hourly reconciliation worker. |
-| **Redis Cache (Aliases/Auth)**| Redis | **Eventual** | AP: Cache miss falls back to PostgreSQL. | TTL expiration (15m) + explicit cache invalidation. |
-| **Analytics Aggregates** | PostgreSQL / Redis | **Eventual** | AP: Rollup metrics tolerate minor lag ($< 60\text{ s}$). | Periodic materialized view refresh. |
+## 2. The Transactional Outbox State Machine
+
+To prevent the classic dual-write failure (where a database commit succeeds but Redis dispatch fails, or vice-versa), events are written to `outbox_events` inside the exact same database transaction that updates domain state.
+
+### 2.1 Outbox Schema Definition
+```sql
+CREATE TYPE outbox_status AS ENUM ('PENDING', 'PROCESSING', 'PUBLISHED', 'FAILED');
+
+CREATE TABLE outbox_events (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
+    aggregate_type VARCHAR(64) NOT NULL,       -- 'DOCUMENT', 'CLAIM', 'ENTITY'
+    aggregate_id UUID NOT NULL,                -- document_id or claim_id
+    aggregate_version INT NOT NULL DEFAULT 1,  -- Sequence number for causal ordering
+    event_type VARCHAR(64) NOT NULL,           -- 'DOCUMENT_INGESTION_REQUESTED', 'CLAIM_DISPUTED'
+    payload_version INT NOT NULL DEFAULT 1,    -- Schema version of payload JSON
+    payload JSONB NOT NULL,
+    status outbox_status NOT NULL DEFAULT 'PENDING',
+    lease_owner VARCHAR(64),                   -- Worker identifier claiming lease
+    lease_expires_at TIMESTAMPTZ,              -- Lease timeout for crash recovery
+    retry_count INT NOT NULL DEFAULT 0,
+    next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    processed_at TIMESTAMPTZ
+);
+CREATE INDEX idx_outbox_pending_dispatch ON outbox_events(status, next_retry_at, created_at) 
+    WHERE status = 'PENDING';
+CREATE INDEX idx_outbox_aggregate_seq ON outbox_events(aggregate_id, aggregate_version);
+```
+
+### 2.2 Concurrent Worker Lease Acquisition (`FOR UPDATE SKIP LOCKED`)
+Multiple outbox relay processes poll and claim pending outbox events concurrently without row-lock contention or duplicate task dispatches:
+
+```sql
+WITH claimable AS (
+    SELECT id 
+    FROM outbox_events
+    WHERE (status = 'PENDING' AND next_retry_at <= NOW())
+       OR (status = 'PROCESSING' AND lease_expires_at < NOW()) -- Stale lease recovery
+    ORDER BY aggregate_id, aggregate_version ASC, created_at ASC
+    LIMIT 50
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE outbox_events
+SET status = 'PROCESSING',
+    lease_owner = :worker_id,
+    lease_expires_at = NOW() + INTERVAL '30 seconds',
+    retry_count = retry_count + 1
+FROM claimable
+WHERE outbox_events.id = claimable.id
+RETURNING outbox_events.*;
+```
 
 ---
 
-## 2. The Transactional Outbox Pattern
+## 3. Causal Ordering & Out-of-Order Graph Event Protection
 
-To eliminate distributed transaction failures (dual-write problem) between PostgreSQL and Redis:
-1. When an investigator uploads a document, the API writes to `documents`, `ingestion_jobs`, and inserts a row into `outbox_events` (`status = 'PENDING'`) **inside the exact same database transaction**.
-2. If Redis is down, the database transaction still commits successfully. No jobs are lost.
-3. A lightweight **Outbox Relay Daemon** polls `outbox_events WHERE status = 'PENDING'` using `SELECT ... FOR UPDATE SKIP LOCKED` and dispatches tasks to Redis.
-4. Once Redis acknowledges task receipt, the relay marks the outbox event as `PUBLISHED`.
+In distributed systems, network jitter can cause an older event (`CLAIM_DISPUTED`) to arrive at the graph synchronization worker *after* a newer event (`CLAIM_RETRACTED`).
 
----
-
-## 3. Failure Scenarios & Self-Healing Guarantees
-
-| Failure Scenario | Immediate Impact | Self-Healing Recovery Mechanism |
-| :--- | :--- | :--- |
-| **PostgreSQL Commits, Redis is Unavailable** | Outbox event remains in `PENDING` state in PostgreSQL. Document is safely stored in S3. | Outbox relay retries dispatching with exponential backoff. Once Redis recovers, jobs are drained in FIFO order. |
-| **Redis Receives Duplicate Event** | Two worker instances receive the identical task payload. | Worker checks distributed lock on `lock:document:{document_id}` and runs atomic `UPDATE ingestion_jobs SET status = 'PROCESSING' WHERE status = 'QUEUED'`. The second worker gets row count `0` and exits safely. |
-| **Worker Crashes Mid-Extraction** | Chunks or claims partially extracted in worker memory; database uncommitted. | Database transaction rolls back completely. Celery redelivers task (`acks_late=True`) to another worker. |
-| **Cognee Cloud is Down / Unreachable** | Extracted claims are committed in PostgreSQL, but graph sync fails. | Worker records `ingestion_jobs.status = 'RETRYING'` with backoff. PostgreSQL claims remain intact; Cognee sync is retried independently. |
-| **Cognee Succeeds, Worker Dies Before DB Update** | Graph edges created in Cognee, but `ingestion_jobs` not marked `COMPLETED`. | Retried task re-runs idempotent sync. Because Cognee nodes and edges are keyed by PostgreSQL UUIDs, existing graph elements are updated in place without duplication. |
-| **Object Storage Upload Succeeds, DB Insert Fails** | Orphaned binary file in S3. | Daily S3 cleanup cron sweeps unreferenced files older than 24 hours. |
-| **Claim Changes During Active Graph Sync** | Investigator disputes a claim while background worker is syncing graph. | Claim status `DISPUTED` in PostgreSQL is immediately authoritative. Hybrid Recall queries filter by PostgreSQL claim status at runtime, so stale Cognee edges are never exposed. |
-
----
-
-## 4. The Periodic Reconciliation Worker
-
-A background daemon executes hourly:
-1. Audits all `ACTIVE` and `DISPUTED` claims updated in the last 24 hours against Cognee graph nodes and edges.
-2. Identifies any missing or orphaned edges.
-3. Automatically triggers an idempotent reconciliation sync.
-4. Records an audit summary in `audit_logs` (`action = 'RECONCILIATION_AUDIT_COMPLETED'`).
+### 3.1 Aggregate Version Sequence Guard
+1. Every domain mutation increments `claims.version`.
+2. The outbox event carries this version as `aggregate_version`.
+3. In Cognee, each edge metadata block stores `last_applied_version`:
+   ```python
+   async def sync_claim_to_cognee(claim: Claim):
+       existing_edge = await cognee_engine.get_edge(claim.id)
+       if existing_edge and existing_edge.metadata.get("version", 0) >= claim.version:
+           logger.warning(
+               f"Ignoring out-of-order event for claim {claim.id}: "
+               f"Cognee has version {existing_edge.metadata.get('version')} >= event version {claim.version}"
+           )
+           return  # Drop stale update
+           
+       await cognee_engine.upsert_edge(
+           source=claim.subject_entity_id,
+           target=claim.object_entity_id,
+           predicate=claim.predicate,
+           edge_id=claim.id,
+           status=claim.status,
+           metadata={"version": claim.version, "case_id": claim.case_id}
+       )
+   ```
 
 ---
 
-## 5. Related Documents
+## 4. Consumer Idempotency Strategy
+
+Celery guarantees **at-least-once delivery**. A worker may crash after executing extraction, or network issues may cause Celery to re-deliver the job. Every consumer must be strictly idempotent.
+
+### 4.1 Ingestion Task Idempotency Guard
+1. **Document Content Hash Check**: `uq_case_document_hash` rejects duplicate uploads.
+2. **Chunk Upsert**: `uq_document_chunk_idx (document_id, chunk_index)`:
+   ```sql
+   INSERT INTO document_chunks (...) VALUES (...)
+   ON CONFLICT (document_id, chunk_index) DO NOTHING;
+   ```
+3. **Claim Grounding Deduplication**: `uq_claim_source_span (claim_id, document_id, doc_start_offset, doc_end_offset)`:
+   ```sql
+   INSERT INTO claim_sources (...) VALUES (...)
+   ON CONFLICT (claim_id, document_id, doc_start_offset, doc_end_offset) DO NOTHING;
+   ```
+
+### 4.2 Handling Partial Ingestion Failures
+- **Scenario**: Gemini structured extraction succeeds; entities and claims commit to PostgreSQL; but Cognee graph synchronization times out.
+- **System Behavior**:
+  1. The database transaction has committed; **entities and claims are safe in PostgreSQL**.
+  2. The Celery task catches the Cognee timeout, logs `COGNEE_SYNC_TIMEOUT`, and records `ingestion_jobs.status = 'RETRYING'`.
+  3. The task retries with exponential backoff ($5s \rightarrow 10s \rightarrow 20s$).
+  4. On retry, the worker detects that chunks, entities, and claims are already present in PostgreSQL (via deterministic surrogate UUIDs), skips re-calling the LLM, and jumps directly to retrying the Cognee graph synchronization step.
+
+---
+
+## 5. Self-Healing Graph Reconciliation Engine
+
+Because Cognee operations do not participate in PostgreSQL transactions, divergence can theoretically occur if an external process crashes mid-synchronization. The **Periodic Reconciliation Worker** runs hourly to enforce convergence:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Recon as Reconciliation Daemon
+    participant PG as PostgreSQL 16
+    participant Cognee as Cognee Engine
+
+    Recon->>PG: Query claims updated in last 24h
+    PG-->>Recon: Return active and disputed claims
+    Recon->>Cognee: Fetch current graph edges for case
+    Cognee-->>Recon: Return edge roster
+    
+    alt Missing Edge in Cognee
+        Recon->>Cognee: Upsert missing edge with claim.id
+    else Stale Edge Status (Disputed/Retracted in PG but Active in Cognee)
+        Recon->>Cognee: Update edge status = RETRACTED
+    else Orphaned Edge in Cognee
+        Recon->>Cognee: Delete edge (unreferenced in PG)
+    end
+    
+    Recon->>PG: INSERT INTO audit_logs (RECONCILIATION_AUDIT_COMPLETED)
+```
+
+---
+
+## 6. Related Documents
 - [Database Design Specification](database-design.md)
 - [Database Transactions Specification](database-transactions.md)
 - [System Architecture](architecture.md)

@@ -1,7 +1,7 @@
 # RedThread Contradiction Management & Claim Lifecycle
 
 > **Document Status**: `DESIGN`  
-> **Signature Differentiator**: Non-destructive evidence handling, explicit dispute states, and historical accountability.
+> **Signature Differentiator**: Non-destructive evidence handling, explicit dispute states, immutable versioning, and historical accountability.
 
 ---
 
@@ -71,29 +71,32 @@ stateDiagram-v2
 
 ---
 
-## 5. The `claim_events` Immutable Ledger
+## 5. Immutable Versioning & The `claim_events` Ledger
 
-Every claim state transition writes an append-only event record:
+### 5.1 Immutable Content Snapshots (`claim_versions`)
+Every insert, challenge, review, and reinstatement creates an immutable row in `claim_versions`:
+```sql
+INSERT INTO claim_versions (
+    id, claim_id, version, organization_id, case_id, subject_entity_id, 
+    predicate, claim_type, object_entity_id, object_value, qualifiers, 
+    is_negated, status, review_outcome, extraction_confidence, 
+    change_reason, actor_id
+) VALUES (
+    uuid_generate_v4(), :claim_id, :new_version, :org_id, :case_id, :subj_id,
+    :predicate, :claim_type, :obj_ent_id, :obj_val, :qualifiers,
+    :is_negated, :status, :outcome, :confidence,
+    :change_reason, :actor_id
+);
+```
 
+### 5.2 Event Ledger (`claim_events`)
 ```sql
 INSERT INTO claim_events (
-    claim_id,
-    event_type,
-    actor_id,
-    prior_status,
-    new_status,
-    prior_review_outcome,
-    new_review_outcome,
-    reason,
-    metadata
+    claim_id, event_type, actor_id, prior_status, new_status, 
+    prior_review_outcome, new_review_outcome, reason, metadata
 ) VALUES (
-    'c101-uuid',
-    'CLAIM_CHALLENGED',
-    'user-bob-uuid',
-    'ACTIVE',
-    'DISPUTED',
-    'PENDING',
-    'PENDING',
+    'c101-uuid', 'CLAIM_CHALLENGED', 'user-bob-uuid', 'ACTIVE', 'DISPUTED', 
+    'PENDING', 'PENDING', 
     'Report B (Doc #45, Page 12) demonstrates account takeover prior to transfer.',
     '{"counter_document_id": "doc-45-uuid", "page": 12}'
 );
@@ -126,5 +129,6 @@ INSERT INTO claim_events (
 
 ## 7. Related Documents
 - [Database Design](database-design.md)
+- [Database Transactions](database-transactions.md)
 - [Hybrid Recall & RAG](hybrid-recall-and-rag.md)
 - [ADR-004: Versioned Claim Lifecycle](decisions/ADR-004-claim-lifecycle-and-intelligent-forgetting.md)

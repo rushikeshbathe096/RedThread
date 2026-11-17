@@ -41,10 +41,12 @@ flowchart TD
 
 ---
 
-## 4. Reversible Merges & Unmerge Workflow
+## 4. Reversible Merges & Unmerge Workflow (Pointer-Based Design)
 An incorrect entity merge can cross-wire unrelated financial accounts or investigation leads.
-- **Merge Tracking**: Logged in `entity_merges` with a JSON snapshot of pre-merge relationship graphs.
-- **Unmerge Capability**: Re-establishes separate entity records, rewrites relationship pointers, and updates Cognee graph structures without data loss.
+- **Pointer-Based Hierarchy**: Merging entity $A$ into $B$ sets `entities.merged_into_id = B`. Claims continue pointing permanently to extracted entity UUIDs without mutation.
+- **Merge Event Ledger**: Every merge action is recorded in `entity_merge_events` with actor ID, reason, and timestamps.
+- **Cycle Prevention**: Trigger `trg_prevent_entity_merge_cycles` enforces acyclicity before any merge commit.
+- **Deterministic Unmerge**: Resetting `entities.merged_into_id = NULL` immediately restores canonical independence without rewriting claims or losing intervening evidence.
 
 ---
 
