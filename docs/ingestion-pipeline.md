@@ -1,12 +1,17 @@
 # RedThread Document Ingestion Pipeline
 
-## 1. Overview & Architecture
-
-The ingestion pipeline transforms raw, heterogeneous investigative documents into structured, interconnected, and verifiable knowledge graph entities and claims. Because document parsing, optical chunking, LLM extraction, and graph synchronization can take from several seconds to minutes per document, all processing is performed **asynchronously** via background Celery workers and Redis.
+> **Document Status**: `DESIGN`  
+> **Core Pipeline**: Asynchronous, reliable document ingestion, structured LLM extraction, transactional outbox publishing, and idempotent graph synchronization.
 
 ---
 
-## 2. Ingestion Lifecycle
+## 1. Overview & Architecture
+
+The ingestion pipeline transforms raw, heterogeneous investigative documents into structured, interconnected, and verifiable knowledge graph entities and claims. Because document parsing, chunking, LLM extraction, and graph synchronization take from several seconds to minutes per document, all processing is performed **asynchronously** via background Celery workers, Redis, and a transactional outbox.
+
+---
+
+## 2. Ingestion Lifecycle & Sequence
 
 ```mermaid
 sequenceDiagram
@@ -14,7 +19,8 @@ sequenceDiagram
     actor Client as Investigator / UI
     participant API as FastAPI /api/v1
     participant S3 as Object Storage (S3/R2)
-    participant PG as PostgreSQL
+    participant PG as PostgreSQL 16
+    participant Relay as Outbox Publisher
     participant Redis as Redis Broker
     participant Worker as Celery Worker
     participant LLM as Gemini 1.5 Pro
@@ -22,21 +28,26 @@ sequenceDiagram
 
     Client->>API: POST /cases/{id}/documents (multipart/form-data)
     API->>API: Validate MIME magic bytes & compute SHA-256
-    API->>S3: Upload raw file bytes
+    API->>S3: Upload raw file payload
+    Note over API,PG: Single Database Transaction
     API->>PG: Insert Document & IngestionJob (status: QUEUED)
-    API->>Redis: Publish job to celery queue
+    API->>PG: Insert OutboxEvent (DOCUMENT_INGESTION_REQUESTED)
     API-->>Client: 202 Accepted {job_id, document_id, status: "QUEUED"}
     
-    Worker->>Redis: Consume job message
+    Relay->>PG: Poll PENDING OutboxEvents
+    Relay->>Redis: Publish job to celery queue
+    Relay->>PG: Mark OutboxEvent as PUBLISHED
+    
+    Worker->>Redis: Consume task message
     Worker->>PG: Update IngestionJob (status: PROCESSING)
-    Worker->>S3: Download document
-    Worker->>Worker: Parse text with page/offset boundaries (PyMuPDF/docx)
-    Worker->>Worker: Chunk text with overlap
+    Worker->>S3: Download document bytes
+    Worker->>Worker: Parse text (PyMuPDF/docx/email/pandas)
+    Worker->>PG: Persist DocumentChunks with offsets & token counts
     Worker->>LLM: Request structured extraction (Entities, Claims, Offsets)
     LLM-->>Worker: Validated Pydantic Extraction Payload
     Worker->>Worker: Run Entity Resolution & Alias Linking
-    Worker->>PG: Insert Entities, Claims, ClaimSources, Relationships
-    Worker->>Cognee: Sync graph nodes & edges
+    Worker->>PG: Insert Entities, Claims, ClaimSources
+    Worker->>Cognee: Sync graph nodes & edges (Idempotent)
     Worker->>PG: Update IngestionJob (status: COMPLETED)
     Worker-->>Client: Real-time update (SSE / Polling)
 ```
@@ -49,30 +60,30 @@ The document ingestion job adheres to a strictly defined state machine ensuring 
 
 ```mermaid
 stateDiagram-v2
-    [*] --> QUEUED : Document uploaded & record created
-    QUEUED --> PROCESSING : Worker claims task
-    PROCESSING --> COMPLETED : Extraction & sync successful
-    PROCESSING --> FAILED : Exception (Timeout / RateLimit / ParseError)
+    [*] --> QUEUED : Document uploaded & outbox event committed
+    QUEUED --> PROCESSING : Worker acquires job lock
+    PROCESSING --> COMPLETED : Extraction & Cognee sync successful
+    PROCESSING --> FAILED : Transient exception (Timeout / RateLimit)
     FAILED --> RETRYING : Attempt < Max Attempts (Exponential Backoff)
     RETRYING --> PROCESSING : Retry execution
-    FAILED --> DEAD_LETTER : Attempt >= Max Attempts
+    FAILED --> DEAD_LETTER : Attempt >= Max Attempts (Alert generated)
     DEAD_LETTER --> [*] : Requires manual inspection / retry API
     COMPLETED --> [*]
 ```
 
 ### State Definitions
-* **`QUEUED`**: The document metadata has been written to PostgreSQL, the file is securely uploaded in S3, and the task has been dispatched to Redis.
-* **`PROCESSING`**: A worker has acquired the job lock and is executing parsing, LLM extraction, or entity resolution.
-* **`COMPLETED`**: Entities, claims, sources, and graph edges are successfully persisted in PostgreSQL and Cognee.
-* **`FAILED`**: A transient error occurred (e.g., Gemini rate limit, network timeout).
-* **`RETRYING`**: The job is awaiting its scheduled backoff timer before re-entering `PROCESSING`.
-* **`DEAD_LETTER`**: Exhausted maximum retry attempts (default: 3). Alert recorded in audit logs.
+* **`QUEUED`**: Metadata written to PostgreSQL, file stored in S3, outbox event published to Redis.
+* **`PROCESSING`**: Worker has acquired the Redis distributed lock (`lock:document:{document_id}`) and is executing parsing or extraction.
+* **`COMPLETED`**: Chunks, entities, claims, and sources committed to PostgreSQL, and nodes/edges synchronized to Cognee.
+* **`FAILED`**: A transient error occurred (Gemini 429, network timeout).
+* **`RETRYING`**: Job awaiting exponential backoff delay before re-entering `PROCESSING`.
+* **`DEAD_LETTER`**: Reached maximum retry count (default: 3). Alert generated in `audit_logs`.
 
 ---
 
 ## 4. Multi-Format Parsers
 
-RedThread supports five primary document formats with granular page and offset tracking:
+RedThread supports four primary document formats with granular page and offset tracking:
 
 | Format | Library | Extraction Strategy | Offset Preservation |
 | :--- | :--- | :--- | :--- |
@@ -93,7 +104,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 
 class ExtractedEntity(BaseModel):
-    name: str = Field(description="Canonical or observed name of entity")
+    name: str = Field(description="Observed entity name in text")
     entity_type: str = Field(description="PERSON, ORGANIZATION, FINANCIAL_ACCOUNT, MONETARY_AMOUNT, etc.")
 
 class ExtractedClaim(BaseModel):
@@ -112,17 +123,26 @@ class ExtractionResult(BaseModel):
     claims: List[ExtractedClaim]
 ```
 
-### Critical Epistemic Rule:
+### Epistemic Boundary Rule:
 > [!IMPORTANT]
-> An LLM-extracted relationship is **never treated as an established fact**. It is recorded in PostgreSQL as an **attributed claim** with its document source citation. Only human investigators or verified corroborating evidence can promote or review the claim's status.
+> An LLM-extracted relationship is **never treated as ground truth**. It is recorded in PostgreSQL as an **attributed claim** with its source citation. Only human investigators or verified corroborating evidence can promote or review the claim's status.
 
 ---
 
-## 6. Idempotency & Fault Tolerance
+## 6. Fault Tolerance, Idempotency & Recovery
 
-1. **SHA-256 Content Deduplication**: Before processing, the document's SHA-256 hash is checked against the target case. If a duplicate is detected, the upload returns the existing document record, preventing redundant LLM inference costs.
+1. **SHA-256 Content Deduplication**: Before processing, the document's SHA-256 hash is checked against the target case. If a duplicate is detected, the upload references the existing document, avoiding redundant LLM inference costs.
 2. **Distributed Job Locks**: Workers acquire a Redis lock on `lock:document:{document_id}` with a TTL of 10 minutes to prevent dual execution by concurrent workers.
-3. **Transactional Database Commits**: All entities, claims, and claim sources for a document are committed within a single database transaction. If the worker crashes halfway through, the transaction rolls back cleanly, leaving the system in a consistent state for retry.
-4. **Exponential Backoff**:
+3. **Transactional Database Commits**: All chunks, entities, claims, and sources for a document are committed within a single database transaction. If the worker crashes halfway through, the transaction rolls back cleanly.
+4. **Idempotent Cognee Synchronization**: Graph nodes and edges are synchronized with deterministic UUIDs. Re-running synchronization on a retried job updates existing nodes without creating duplicates.
+5. **Exponential Backoff**:
    $$\text{Delay}(t) = \text{base\_delay} \times 2^{\text{attempt}} + \text{jitter}$$
    Default: 5 seconds base delay $\rightarrow$ 10s $\rightarrow$ 20s $\rightarrow$ Dead letter.
+
+---
+
+## 7. Related Documents
+- [System Architecture](architecture.md)
+- [Database Design](database-design.md)
+- [Data Consistency](data-consistency.md)
+- [ADR-002: Asynchronous Ingestion](decisions/ADR-002-asynchronous-ingestion-pipeline.md)

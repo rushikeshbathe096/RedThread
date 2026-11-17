@@ -1,5 +1,11 @@
 # Module 6: Knowledge Graph & Cross-Case Intelligence
 
+> **Document Status**: `DESIGN`  
+> **Module ID**: `MOD-06`  
+> **Responsibility**: Graph topology construction, BFS bounded traversal, cross-case overlap discovery, and permission-aware exploration.
+
+---
+
 ## 1. Purpose & Scope
 The knowledge graph models entities as nodes and attributed claims as directed, weighted edges. This module empowers investigators to discover multi-hop paths, uncover hidden conspiratorial networks, and identify cross-case entity overlaps.
 
@@ -36,3 +42,10 @@ flowchart LR
 1. **Shared Entity Detection**: Automatically surfaces when an entity (e.g. `Account AX91`) appears in two separate cases.
 2. **Evidentiary Restraint**: A shared entity does not establish criminal conspiracy on its own. RedThread highlights the overlap as an investigative lead and presents the underlying evidence for human assessment.
 3. **Strict Authorization Scoping**: Overlaps are only visible if the requesting user has authorization for both cases.
+
+---
+
+## 4. Related Documents
+- [System Architecture](../architecture.md)
+- [Hybrid Recall & RAG](../hybrid-recall-and-rag.md)
+- [Security Model](../security-model.md)

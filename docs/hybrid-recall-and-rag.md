@@ -1,5 +1,10 @@
 # RedThread Hybrid Recall & RAG System
 
+> **Document Status**: `DESIGN`  
+> **Core Retrieval Engine**: 13-stage hybrid graph-vector retrieval, bounded traversal, strict citation validation, and grounded answer synthesis.
+
+---
+
 ## 1. Why Hybrid Retrieval is Essential
 
 In complex investigations, evidence is fragmented across separate files:
@@ -12,55 +17,60 @@ In complex investigations, evidence is fragmented across separate files:
 ```
 
 ### The Failure of Vector-Only Retrieval
-When an investigator asks: *"How is Person A connected to Organization Z?"*, vector embeddings fail. The cosine similarity between the text describing Person A's wire transfer and the text describing Organization Z's corporate roster is virtually zero. Vector search retrieves neither Document B nor Document C.
+When an investigator asks: *"How is Person A connected to Organization Z?"*, vector embeddings fail. The cosine similarity between the text describing Person A's wire transfer and the text describing Organization Z's corporate charter is virtually zero. Vector search retrieves neither Document B nor Document C.
 
 ### The Power of Hybrid Retrieval
 RedThread couples **Graph Traversal** (following explicit attributed edges across documents) with **Vector Retrieval** (capturing nuanced semantic context within passages).
 
 ---
 
-## 2. Retrieval & Generation Pipeline
+## 2. The 13-Stage Retrieval Pipeline
 
 ```mermaid
 flowchart TD
-    Q[Investigator Natural Language Query] --> U[Query Understanding & Entity Extraction]
+    Q[1. User Natural Language Query] --> P[2. Query Preprocessing & Normalization]
+    P --> E[3. Query Entity Extraction]
+    E --> C[4. Candidate Entity Identification & Alias Lookup]
     
-    subgraph Dual Retrieval
-        U -->|Entities & Aliases| G[Graph Traversal Engine<br/>Cognee + Shortest Path BFS]
-        U -->|Query Embedding| V[Vector Passage Retrieval<br/>Semantic Chunk Matching]
+    subgraph Dual Retrieval Phase
+        C -->|Query Embedding| V[5. Vector Retrieval: Top-K Passages]
+        C -->|Seed Entity IDs| G[6. Graph Retrieval: Bounded BFS Traversal]
     end
     
-    G -->|Graph Relational Paths| F[Evidence Filter & Ranker]
-    V -->|Supporting Text Chunks| F
+    V --> A[7. Evidence Aggregation]
+    G --> A
     
-    subgraph Evidence Filtering & Verification
-        F --> AuthCheck{Check Case Permissions}
-        AuthCheck --> StatusFilter{Filter Retracted & Flag Disputed}
-        StatusFilter --> ContextAsm[Assemble Grounded Evidence Package]
-    end
+    A --> R[8. Evidence Ranking & Corroboration Scoring]
+    R --> F1[9. Case Permission Filtering]
+    F1 --> F2[10. Claim Status Filtering: Strip Retracted & Flag Disputed]
+    F2 --> CV[11. Citation Validation against PostgreSQL Source Offsets]
     
-    ContextAsm --> LLM[Gemini 1.5 Pro<br/>Strict Grounded Prompt]
-    LLM --> Out[Grounded Response<br/>Answer + Exact Graph Path + Page Citations]
+    CV --> GCheck{Is Evidence Sufficient?}
+    GCheck -- Yes --> Synth[12. Grounded LLM Answer Generation]
+    GCheck -- No --> Fallback[13. Insufficient-Evidence Fallback]
+    
+    Synth --> Out[Grounded Response Package]
+    Fallback --> Out
 ```
 
+### Stage-by-Stage Specifications:
+1. **Query Preprocessing**: Strips whitespace, sanitizes input, and handles query expansion.
+2. **Query Entity Extraction**: Uses Gemini to identify explicit names, account numbers, and corporate entities mentioned in the prompt.
+3. **Candidate Entity Identification**: Maps extracted query strings to canonical entity UUIDs in `entities` and `entity_aliases`.
+4. **Vector Retrieval**: Fetches top-$K$ semantically relevant chunks from `document_chunks` using vector similarity search.
+5. **Graph Retrieval**: Identifies connected subgraphs in Cognee starting from candidate entity nodes.
+6. **Bounded Graph Traversal (BFS)**: Executes Breadth-First Search up to a fixed depth ($N \le 4$ hops) to discover shortest unweighted paths between seed entities.
+7. **Evidence Aggregation**: Merges textual passages and relationship graph edges into an evidence pool.
+8. **Evidence Ranking**: Ranks claims based on extraction confidence, document type authority, and path length.
+9. **Permission Filtering**: **Crucial Security Step**: Queries PostgreSQL to ensure every claim and document chunk belongs to a case the requesting user is authorized to view.
+10. **Claim-Status Filtering**: Removes `RETRACTED` claims from default retrieval; tags `DISPUTED` claims with mandatory dispute warnings.
+11. **Citation Validation**: Verifies that character offsets in `claim_sources` map directly to verbatim excerpts in source documents.
+12. **Grounded LLM Answer Generation**: Gemini synthesizes the answer, citing only verified `[Claim #ID]` tokens.
+13. **Insufficient-Evidence Fallback**: If no path or verified evidence exists, returns: *"The available evidence does not establish a connection."*
+
 ---
 
-## 3. Graph Traversal Algorithms
-
-RedThread implements targeted graph algorithms based on query intent:
-
-| Algorithm | Query Intent | Application |
-| :--- | :--- | :--- |
-| **Breadth-First Search (BFS)** | *"How is Entity A connected to Entity B?"* | Discovers the shortest unweighted relationship path connecting two entities across case files. |
-| **Dijkstra's Algorithm** | *"What is the most reliable connection between A and B?"* | Weighted path traversal where edge weights inversely reflect extraction confidence and evidence strength. |
-| **Bounded Neighborhood ($N$-hop)** | *"Explore everything connected to Account AX91 within 2 hops."* | Subgraph expansion for interactive visualization without loading the entire graph. |
-| **Connected Components** | *"Are there separate criminal networks in this dataset?"* | Partitions disparate entity clusters to detect independent conspiratorial groups. |
-
----
-
-## 4. Grounded Synthesis Prompt Design
-
-To eliminate hallucinations, the generation prompt strictly restricts the LLM to supplied evidence:
+## 3. Strict Epistemic Grounding Prompt
 
 ```markdown
 SYSTEM INSTRUCTION:
@@ -84,42 +94,23 @@ USER QUERY:
 
 ---
 
-## 5. Recall API Response Contract
+## 4. API Response Contract
 
 ```json
 {
-  "answer": "John Smith is connected to Person B through Global Trade Corp and Account AX91. Wire transfer records indicate John Smith transferred $50,000 to Global Trade Corp [Claim #101]. Global Trade Corp operates through Account AX91 [Claim #142], which was subsequently used in a transaction involving Person B [Claim #205].",
-  "confidence": "high",
+  "answer": "John Smith is connected to Person B through Global Trade Corp and Account AX91 [Claim #101, #142, #205]. However, Claim #101 is currently disputed.",
+  "confidence": "moderate",
   "evidence": [
     {
       "claim_id": "claim_101",
       "subject": "John Smith",
       "predicate": "TRANSFERRED_TO",
       "object": "Global Trade Corp",
+      "status": "DISPUTED",
       "document_id": "doc_88f910a3",
       "document_filename": "wire_transfer_memo.pdf",
       "page": 4,
       "snippet": "John Smith transferred $50,000 to Global Trade Corp through Account AX91."
-    },
-    {
-      "claim_id": "claim_142",
-      "subject": "Global Trade Corp",
-      "predicate": "OPERATES_THROUGH",
-      "object": "Account AX91",
-      "document_id": "doc_99a1b2c3",
-      "document_filename": "corporate_filing_2025.pdf",
-      "page": 11,
-      "snippet": "Global Trade Corp maintains operating treasury accounts including Account AX91."
-    },
-    {
-      "claim_id": "claim_205",
-      "subject": "Account AX91",
-      "predicate": "USED_IN_TRANSACTION_WITH",
-      "object": "Person B",
-      "document_id": "doc_77c8d9e0",
-      "document_filename": "bank_statement_q3.pdf",
-      "page": 8,
-      "snippet": "Account AX91 was used in a transaction involving Person B."
     }
   ],
   "path": [
@@ -128,6 +119,16 @@ USER QUERY:
     "Account AX91",
     "Person B"
   ],
-  "warnings": []
+  "warnings": [
+    "Claim #101 has an open dispute regarding transaction attribution."
+  ]
 }
 ```
+
+---
+
+## 5. Related Documents
+- [Database Design](database-design.md)
+- [Contradiction Management](contradiction-and-claim-lifecycle.md)
+- [ADR-003: Hybrid Graph-Vector Recall](decisions/ADR-003-hybrid-graph-vector-recall.md)
+- [Evaluation Framework](benchmarks/evaluation-framework.md)

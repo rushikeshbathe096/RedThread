@@ -1,5 +1,11 @@
 # Module 10: Reports and Export
 
+> **Document Status**: `DESIGN`  
+> **Module ID**: `MOD-10`  
+> **Responsibility**: Frozen evidentiary dossier generation (PDF, JSON, CSV) and historical snapshot compliance.
+
+---
+
 ## 1. Purpose & Scope
 At the conclusion of an investigation (or during periodic compliance audits), investigators must export evidence-backed summaries for court submission, regulatory review, or executive briefings.
 
@@ -32,3 +38,10 @@ flowchart LR
     E --> F[Store in S3 & Log in audit_logs]
     F --> G[Return Downloadable URL]
 ```
+
+---
+
+## 4. Related Documents
+- [API Specification](../api-specification.md)
+- [Database Design](../database-design.md)
+- [Definition of Done](../definition-of-done.md)

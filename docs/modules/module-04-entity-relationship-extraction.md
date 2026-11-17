@@ -1,5 +1,11 @@
 # Module 4: Entity and Relationship Extraction
 
+> **Document Status**: `DESIGN`  
+> **Module ID**: `MOD-04`  
+> **Responsibility**: Gemini structured extraction, Pydantic validation, verbatim offset tracking, and claim attribution.
+
+---
+
 ## 1. Purpose & Scope
 This module converts raw unstructured text into structured, normalized entities, relationships, and granular source-attributed claims. 
 
@@ -45,4 +51,10 @@ flowchart TD
 An LLM-extracted relationship is **never automatically treated as ground truth**.
 - **The System Records**: "Document X claims that Person A transferred funds to Company B."
 - **The Human Reviews**: An investigator examines the underlying document to verify, challenge, or corroborate the assertion.
-This distinction ensures RedThread operates as an accountable intelligence aid rather than an unverified hallucination engine.
+
+---
+
+## 4. Related Documents
+- [Document Ingestion Pipeline](../ingestion-pipeline.md)
+- [Database Design](../database-design.md)
+- [Entity Resolution](../entity-resolution.md)

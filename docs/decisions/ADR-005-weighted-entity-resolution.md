@@ -1,7 +1,10 @@
 # ADR-005: Weighted Multi-Attribute Entity Resolution
 
-## Status
-Accepted
+> **Document Status**: `DESIGN`  
+> **Date**: 2026-11-18  
+> **Status**: Accepted
+
+---
 
 ## Context
 Initial prototype versions of RedThread used naive exact-match string matching (e.g. lowercase and strip whitespace) for entity identification.
@@ -16,6 +19,7 @@ We implement a **calibrated, multi-signal scoring model** paired with **human-in
 1. **Scoring Function**:
    $$S = 0.35N + 0.25A + 0.25C + 0.15T$$
    Evaluating Name Similarity ($N$), Attribute Matching ($A$), Surrounding Context Similarity ($C$), and Entity Type Compatibility ($T$).
+   *Important*: $S$ is treated as a **ranking score**, not a calibrated probability.
 2. **Tri-Tier Decision Thresholds**:
    - $S \ge 0.90$: Auto-link as alias candidate.
    - $0.70 \le S < 0.90$: Route to investigator manual review queue.
@@ -27,3 +31,9 @@ We implement a **calibrated, multi-signal scoring model** paired with **human-in
 ## Consequences
 - **Positive**: Prevents graph corruption from premature merges; handles real-world corporate abbreviations and aliases; provides a clean manual review workflow.
 - **Negative**: Requires tuning weights $N, A, C, T$ against labeled investigative datasets; adds a manual review queue to the frontend UI.
+
+---
+
+## Related Documents
+- [Entity Resolution Specification](../entity-resolution.md)
+- [Database Design](../database-design.md)

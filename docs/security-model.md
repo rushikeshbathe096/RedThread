@@ -1,12 +1,18 @@
 # RedThread Security Model & Multi-Tenancy
 
-## 1. Security Principles & Threat Model
+> **Document Status**: `DESIGN`  
+> **Security Baseline**: Zero Trust internal architecture, strict tenant and case isolation, and verifiable evidence immutability.
 
-In an investigative intelligence platform handling sensitive corporate, financial, or legal documents, confidentiality, integrity, and strict non-repudiation are paramount. RedThread is built on a **Zero Trust** internal architecture:
-- **Tenant Isolation**: Organizations must never see or infer each other's data under any condition.
+---
+
+## 1. Security Architecture & Threat Mitigation
+
+In an investigative intelligence platform handling sensitive corporate, financial, and legal records, confidentiality, integrity, and strict non-repudiation are paramount. RedThread is built on three core security pillars:
+- **Tenant Isolation**: Organizations must never see, query, or infer each other's data under any condition.
 - **Need-to-Know Access**: Access is controlled at both the organization level and individual case workspaces.
-- **Evidence Immutability**: Historical evidence cannot be deleted or mutated without an auditable trace.
-- **Untrusted Ingestion Boundaries**: Uploaded documents are treated as untrusted inputs carrying potential malware or prompt injection payloads.
+- **Evidence Immutability**: Historical evidence cannot be deleted or mutated without an auditable trace in `claim_events` and `audit_logs`.
+
+For threat analysis and attack vector mitigations, consult the [Threat Model](threat-model.md).
 
 ---
 
@@ -111,7 +117,7 @@ Investigative documents often contain untrusted third-party text, which may mali
 
 ### Defenses Implemented:
 1. **Strict Data Separation**: Ingestion prompts strictly separate operational system instructions from document payloads using structured XML/Markdown fencing.
-2. **Deterministic JSON Schema**: All extractions use Gemini's structured output mode (`response_schema=PydanticModel`). The model cannot output free-form text or unauthorized execution instructions.
+2. **Deterministic JSON Schema**: All extractions use Gemini's structured output mode (`response_schema=ExtractionResult`). The model cannot output free-form text or unauthorized execution instructions.
 3. **Authorization Boundary Invariant**: The LLM is never given tool-calling abilities that query arbitrary database tables. All context provided to the LLM is pre-filtered by the application tier based on the user's active permissions.
 
 ---
@@ -125,3 +131,11 @@ Every evidence mutation produces an immutable row in `audit_logs`:
 - AI recall queries executed (query text, retrieved claims, returned answer)
 
 Audit logs are append-only. The database user role used by the application service is granted `INSERT` and `SELECT` permissions on `audit_logs`, with `UPDATE` and `DELETE` explicitly prohibited by database triggers.
+
+---
+
+## 8. Related Documents
+- [Threat Model](threat-model.md)
+- [Database Design](database-design.md)
+- [API Specification](api-specification.md)
+- [Definition of Done](definition-of-done.md)

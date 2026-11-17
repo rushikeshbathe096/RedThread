@@ -1,5 +1,11 @@
 # Module 8: Contradiction Detection & Intelligent Forgetting
 
+> **Document Status**: `DESIGN`  
+> **Module ID**: `MOD-08`  
+> **Responsibility**: Claim lifecycle state machine, dispute challenges, review decisions, and immutable audit event ledgers.
+
+---
+
 ## 1. Purpose & Scope
 This module represents RedThread's signature architectural differentiator. In traditional RAG systems, new contradictory information either overwrites old data or causes hallucinations. 
 
@@ -33,4 +39,9 @@ Every transition writes an immutable event row recording:
 - **Disputed State**: Traversed with explicit warning flags; LLM answers mention both perspectives.
 - **Retracted State**: Excluded from default search and RAG synthesis; retained exclusively in historical audits and report archives.
 
-For full technical specifications, see [Contradiction Management & Claim Lifecycle](file:///home/rushikeshbathe096/hackathons/Redthread/docs/contradiction-and-claim-lifecycle.md) and [ADR-004](file:///home/rushikeshbathe096/hackathons/Redthread/docs/decisions/ADR-004-claim-lifecycle-and-intelligent-forgetting.md).
+---
+
+## 4. Related Documents
+- [Contradiction Management & Claim Lifecycle](../contradiction-and-claim-lifecycle.md)
+- [ADR-004: Versioned Claim Lifecycle](../decisions/ADR-004-claim-lifecycle-and-intelligent-forgetting.md)
+- [Database Design](../database-design.md)

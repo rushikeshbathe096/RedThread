@@ -1,7 +1,10 @@
 # ADR-004: Versioned Claim Lifecycle and Intelligent Forgetting
 
-## Status
-Accepted
+> **Document Status**: `DESIGN`  
+> **Date**: 2026-11-18  
+> **Status**: Accepted
+
+---
 
 ## Context
 In real investigations, information is rarely static. Initial reports frequently contain assumptions, mistaken identities, or deliberate deception that subsequent forensic evidence contradicts.
@@ -15,7 +18,9 @@ In legal and investigative domains, **silent erasure of historical claims is una
 ## Decision
 We reject destructive updates and in-place deletions in favor of an **Append-Only Audited Claim State Machine**:
 
-1. **Explicit Review Statuses**: Claims transition across `ACTIVE`, `DISPUTED`, `REVIEWED`, and `RETRACTED`.
+1. **Separation of Operational Status vs. Review Outcome**:
+   - Claim Status: `ACTIVE`, `DISPUTED`, `RETRACTED`.
+   - Review Outcome: `PENDING`, `UPHELD`, `REJECTED`, `INCONCLUSIVE`.
 2. **Three Orthogonal Dimensions**: We maintain separate metrics for:
    - *Extraction Confidence* (model's certainty in reading the text).
    - *Evidence Strength* (evidentiary weight of the document type).
@@ -30,3 +35,9 @@ We reject destructive updates and in-place deletions in favor of an **Append-Onl
 ## Consequences
 - **Positive**: Complete historical accountability; legal and investigative integrity; eliminates LLM confusion when handling contradictory sources.
 - **Negative**: Database storage increases monotonically; graph queries require conditional filtering on claim status.
+
+---
+
+## Related Documents
+- [Contradiction Management & Claim Lifecycle](../contradiction-and-claim-lifecycle.md)
+- [Database Design](../database-design.md)

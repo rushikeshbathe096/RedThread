@@ -1,49 +1,50 @@
 # RedThread REST API Specification
 
-**Base URL**: `/api/v1`  
-**Protocol**: HTTPS  
-**Content-Type**: `application/json` (except file uploads which use `multipart/form-data`)  
-**Authentication**: Bearer JWT (`Authorization: Bearer <token>`)
+> **Document Status**: `DESIGN`  
+> **Base URL**: `/api/v1`  
+> **Protocol**: HTTPS  
+> **Content-Type**: `application/json` (except document uploads: `multipart/form-data`)  
+> **Authentication**: Bearer JWT (`Authorization: Bearer <token>`)
 
 ---
 
-## 1. Global Standards & Error Format
+## 1. Global Standards, Errors & Pagination
 
-### 1.1 Standard Error Response Schema
+### 1.1 Error Response Contract
 ```json
 {
   "error": {
     "code": "ENTITY_NOT_FOUND",
-    "message": "The requested entity ID was not found in the authorized case scope.",
+    "message": "The requested entity was not found in the authorized case scope.",
     "details": {},
     "request_id": "req_88f910a3",
-    "timestamp": "2026-11-18T01:45:00Z"
+    "timestamp": "2026-11-18T02:00:00Z"
   }
 }
 ```
 
-### 1.2 Pagination Query Parameters
-All listing endpoints accept standard offset-based pagination:
-* `page` (integer, default: 1): Page number (1-indexed).
-* `page_size` (integer, default: 20, max: 100): Number of records per page.
+### 1.2 Pagination Parameters
+List endpoints support standard pagination:
+- `page` (integer, default: 1, minimum: 1)
+- `page_size` (integer, default: 20, minimum: 1, maximum: 100)
 
 ---
 
-## 2. Authentication APIs
+## 2. Authentication & Identity APIs
 
 ### 2.1 Register User
-* **Method & Path**: `POST /auth/register`
-* **Access**: Public
-* **Request Body**:
+- **Method & Path**: `POST /auth/register`
+- **Access**: Public
+- **Request Body**:
 ```json
 {
   "email": "investigator@example.com",
-  "password": "StrongPassword123!",
+  "password": "CorrectHorseBatteryStaple123!",
   "full_name": "Jane Doe",
-  "organization_name": "Special Investigations Unit"
+  "organization_name": "Forensic Intelligence Unit"
 }
 ```
-* **Response (201 Created)**:
+- **Response (201 Created)**:
 ```json
 {
   "user": {
@@ -53,7 +54,7 @@ All listing endpoints accept standard offset-based pagination:
   },
   "organization": {
     "id": "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
-    "name": "Special Investigations Unit",
+    "name": "Forensic Intelligence Unit",
     "role": "ORGANIZATION_ADMIN"
   },
   "access_token": "eyJhbGciOi...",
@@ -64,326 +65,253 @@ All listing endpoints accept standard offset-based pagination:
 ```
 
 ### 2.2 Login
-* **Method & Path**: `POST /auth/login`
-* **Request Body**:
-```json
-{
-  "email": "investigator@example.com",
-  "password": "StrongPassword123!"
-}
-```
-* **Response (200 OK)**:
-```json
-{
-  "access_token": "eyJhbGciOi...",
-  "refresh_token": "rt_99e821...",
-  "token_type": "bearer",
-  "expires_in": 900
-}
-```
+- **Method & Path**: `POST /auth/login`
+- **Access**: Public
+- **Request Body**: `{"email": "investigator@example.com", "password": "..."}`
+- **Response (200 OK)**: `{"access_token": "...", "refresh_token": "...", "token_type": "bearer", "expires_in": 900}`
 
-### 2.3 Refresh Token
-* **Method & Path**: `POST /auth/refresh`
-* **Request Body**:
-```json
-{
-  "refresh_token": "rt_99e821..."
-}
-```
-* **Response (200 OK)**: New access token and rotated refresh token.
+### 2.3 Refresh Token Rotation
+- **Method & Path**: `POST /auth/refresh`
+- **Request Body**: `{"refresh_token": "rt_99e821..."}`
+- **Response (200 OK)**: New access token and rotated refresh token.
 
 ### 2.4 Logout
-* **Method & Path**: `POST /auth/logout`
-* **Request Body**:
-```json
-{
-  "refresh_token": "rt_99e821..."
-}
-```
-* **Response (200 OK)**: `{"status": "SUCCESS", "message": "Session invalidated"}`
+- **Method & Path**: `POST /auth/logout`
+- **Request Body**: `{"refresh_token": "rt_99e821..."}`
+- **Response (200 OK)**: `{"status": "SUCCESS", "message": "Session invalidated"}`
 
 ### 2.5 Current User Profile
-* **Method & Path**: `GET /auth/me`
-* **Response (200 OK)**: User profile, active memberships, and system role.
+- **Method & Path**: `GET /auth/me`
+- **Response (200 OK)**: User profile, active memberships, and organization permissions.
 
 ---
 
 ## 3. Organization Management APIs
 
 ### 3.1 List Organizations
-* **Method & Path**: `GET /organizations`
-* **Response (200 OK)**: List of organizations the user is a member of.
+- **Method & Path**: `GET /organizations`
+- **Response (200 OK)**: Array of organizations the user belongs to.
 
 ### 3.2 Invite Organization Member
-* **Method & Path**: `POST /organizations/{id}/members`
-* **Required Role**: `ORGANIZATION_ADMIN`
-* **Request Body**:
-```json
-{
-  "email": "colleague@example.com",
-  "role": "INVESTIGATOR"
-}
-```
-* **Response (201 Created)**: Member invitation details.
+- **Method & Path**: `POST /organizations/{id}/members`
+- **Required Role**: `ORGANIZATION_ADMIN`
+- **Request Body**: `{"email": "analyst@example.com", "role": "INVESTIGATOR"}`
+- **Response (201 Created)**: Membership invitation details.
 
 ### 3.3 Update Member Role
-* **Method & Path**: `PATCH /organizations/{id}/members/{user_id}`
-* **Request Body**: `{"role": "REVIEWER"}`
-* **Response (200 OK)**: Updated membership.
+- **Method & Path**: `PATCH /organizations/{id}/members/{user_id}`
+- **Required Role**: `ORGANIZATION_ADMIN`
+- **Request Body**: `{"role": "REVIEWER"}`
+- **Response (200 OK)**: Updated membership.
 
 ---
 
 ## 4. Case Management APIs
 
 ### 4.1 Create Case
-* **Method & Path**: `POST /cases`
-* **Required Role**: `INVESTIGATOR` or `ORGANIZATION_ADMIN`
-* **Request Body**:
+- **Method & Path**: `POST /cases`
+- **Required Role**: `INVESTIGATOR` or `ORGANIZATION_ADMIN`
+- **Request Body**:
 ```json
 {
   "case_number": "CASE-2026-001",
-  "name": "Financial Network Investigation A",
-  "description": "Cross-border transaction trace between Company X and Person B."
+  "name": "Financial Network Probe",
+  "description": "Multi-jurisdictional shell company transaction analysis."
 }
 ```
-* **Response (201 Created)**: Case entity.
+- **Response (201 Created)**: Created case record.
 
-### 4.2 List Authorized Cases
-* **Method & Path**: `GET /cases`
-* **Query Params**: `status` (ACTIVE, ARCHIVED), `search` (string)
-* **Response (200 OK)**: Array of cases accessible to current user.
+### 4.2 List Cases
+- **Method & Path**: `GET /cases`
+- **Query Params**: `status` (`ACTIVE`, `ARCHIVED`, `CLOSED`), `search` (string)
+- **Response (200 OK)**: Paginated array of authorized cases.
 
 ### 4.3 Get Case Details
-* **Method & Path**: `GET /cases/{id}`
-* **Response (200 OK)**:
+- **Method & Path**: `GET /cases/{id}`
+- **Response (200 OK)**:
 ```json
 {
   "id": "c1f2e3d4-5678-90ab-cdef-1234567890ab",
   "case_number": "CASE-2026-001",
-  "name": "Financial Network Investigation A",
+  "name": "Financial Network Probe",
   "status": "ACTIVE",
   "document_count": 48,
   "entity_count": 126,
   "claim_count": 214,
-  "disputed_claim_count": 4,
-  "assigned_members": [
-    {"user_id": "u1", "full_name": "Alice Admin", "role": "ORGANIZATION_ADMIN"},
-    {"user_id": "u2", "full_name": "Bob Investigator", "role": "INVESTIGATOR"}
-  ],
+  "disputed_claim_count": 3,
   "created_at": "2026-11-10T12:00:00Z"
 }
 ```
 
 ### 4.4 Archive Case
-* **Method & Path**: `DELETE /cases/{id}`
-* **Response (200 OK)**: Case marked as `ARCHIVED`.
+- **Method & Path**: `DELETE /cases/{id}`
+- **Required Role**: `ORGANIZATION_ADMIN`
+- **Response (200 OK)**: Case marked as `ARCHIVED`.
 
 ---
 
 ## 5. Document Ingestion APIs
 
 ### 5.1 Upload Document
-* **Method & Path**: `POST /cases/{id}/documents`
-* **Content-Type**: `multipart/form-data`
-* **Payload**: Form fields: `file` (Binary), `metadata` (JSON string, optional).
-* **Response (202 Accepted)**:
+- **Method & Path**: `POST /cases/{id}/documents`
+- **Content-Type**: `multipart/form-data`
+- **Payload**: `file` (Binary), `metadata` (JSON string, optional)
+- **Response (202 Accepted)**:
 ```json
 {
   "job_id": "job_3f4a9b8c",
   "document_id": "doc_88f910a3",
-  "filename": "suspicious_transfers_q1.pdf",
-  "status": "QUEUED",
-  "estimated_time_seconds": 15
+  "filename": "wire_transfers.pdf",
+  "status": "QUEUED"
 }
 ```
 
 ### 5.2 Get Ingestion Status
-* **Method & Path**: `GET /documents/{id}/status`
-* **Response (200 OK)**:
+- **Method & Path**: `GET /documents/{id}/status`
+- **Response (200 OK)**:
 ```json
 {
   "document_id": "doc_88f910a3",
-  "filename": "suspicious_transfers_q1.pdf",
+  "filename": "wire_transfers.pdf",
   "status": "PROCESSING",
-  "current_stage": "LLM_EXTRACTION",
-  "progress_pct": 65,
+  "attempt_count": 1,
   "error_message": null
 }
 ```
 
-### 5.3 Retry Failed Processing
-* **Method & Path**: `POST /documents/{id}/retry`
-* **Response (202 Accepted)**: Reschedules the ingestion job for dead-lettered/failed items.
+### 5.3 Retry Ingestion Job
+- **Method & Path**: `POST /documents/{id}/retry`
+- **Response (202 Accepted)**: Re-enqueues a `FAILED` or `DEAD_LETTER` ingestion task.
 
 ---
 
-## 6. Intelligence & Graph APIs
+## 6. Entity & Entity Resolution APIs
 
-### 6.1 Retrieve Case Subgraph
-* **Method & Path**: `GET /cases/{id}/graph`
-* **Query Params**:
-  * `max_depth` (int, default: 2)
-  * `entity_id` (UUID, optional seed node)
-  * `include_disputed` (boolean, default: true)
-  * `min_confidence` (float, default: 0.5)
-* **Response (200 OK)**:
+### 6.1 List Case Entities
+- **Method & Path**: `GET /cases/{id}/entities`
+- **Query Params**: `entity_type`, `search`, `page`, `page_size`
+- **Response (200 OK)**: Paginated entity records.
+
+### 6.2 Get Entity Details & Aliases
+- **Method & Path**: `GET /entities/{id}`
+- **Response (200 OK)**: Canonical entity details, aliases list, and co-occurrence statistics.
+
+### 6.3 Merge Entities
+- **Method & Path**: `POST /entities/{id}/merge`
+- **Required Role**: `INVESTIGATOR` or `ORGANIZATION_ADMIN`
+- **Request Body**:
+```json
+{
+  "subsumed_entity_id": "ent_99a8b7c6",
+  "reason": "Corporate filing demonstrates TCS is the recognized alias for Tata Consultancy Services."
+}
+```
+- **Response (200 OK)**: Merge confirmation and snapshot ID.
+
+### 6.4 Unmerge Entities
+- **Method & Path**: `POST /entities/{id}/unmerge`
+- **Required Role**: `INVESTIGATOR` or `ORGANIZATION_ADMIN`
+- **Request Body**: `{"merge_id": "merge_uuid"}`
+- **Response (200 OK)**: Unmerge confirmation with restored entity IDs.
+
+---
+
+## 7. Knowledge Graph & Recall APIs
+
+### 7.1 Retrieve Subgraph
+- **Method & Path**: `GET /cases/{id}/graph`
+- **Query Params**: `seed_entity_id`, `max_depth` (default: 2), `include_disputed` (default: true)
+- **Response (200 OK)**:
 ```json
 {
   "nodes": [
-    {
-      "id": "ent_101",
-      "name": "John Smith",
-      "type": "PERSON",
-      "disputed_claims_count": 1
-    },
-    {
-      "id": "ent_202",
-      "name": "Global Trade Corp",
-      "type": "ORGANIZATION",
-      "disputed_claims_count": 0
-    }
+    {"id": "ent_1", "label": "John Smith", "type": "PERSON", "disputed": false},
+    {"id": "ent_2", "label": "Global Trade Corp", "type": "ORGANIZATION", "disputed": true}
   ],
   "edges": [
     {
-      "id": "rel_501",
-      "source": "ent_101",
-      "target": "ent_202",
+      "id": "claim_101",
+      "source": "ent_1",
+      "target": "ent_2",
       "predicate": "TRANSFERRED_TO",
-      "confidence": 0.85,
       "status": "DISPUTED",
-      "claim_id": "claim_77"
+      "confidence": 0.95
     }
   ]
 }
 ```
 
-### 6.2 Intelligent Recall (AI Investigation Assistant)
-* **Method & Path**: `POST /cases/{id}/recall`
-* **Request Body**:
+### 7.2 Intelligent Recall (AI Investigation Assistant)
+- **Method & Path**: `POST /cases/{id}/recall`
+- **Request Body**:
 ```json
 {
   "query": "How is John Smith connected to Person B?",
   "include_disputed": true
 }
 ```
-* **Response (200 OK)**:
+- **Response (200 OK)**:
 ```json
 {
-  "answer": "John Smith is connected to Person B through Global Trade Corp and Account AX91, which was used in Transaction T1. However, Note that the transaction between John Smith and Global Trade Corp is currently disputed.",
+  "answer": "John Smith is connected to Person B through Global Trade Corp and Account AX91 [Claim #101, #142, #205]. However, Claim #101 is currently disputed.",
   "confidence": "moderate",
   "evidence": [
     {
       "claim_id": "claim_101",
       "document_id": "doc_1",
-      "document_filename": "wire_transfer_memo.pdf",
+      "document_filename": "wire_memo.pdf",
       "page": 4,
       "snippet": "John Smith transferred $50,000 to Global Trade Corp through Account AX91."
-    },
-    {
-      "claim_id": "claim_205",
-      "document_id": "doc_2",
-      "document_filename": "account_audit.pdf",
-      "page": 8,
-      "snippet": "Account AX91 was used in a transaction involving Person B."
     }
   ],
-  "path": [
-    "John Smith",
-    "Global Trade Corp",
-    "Account AX91",
-    "Transaction T1",
-    "Person B"
-  ],
-  "warnings": [
-    "Claim #101 has an open dispute regarding transaction attribution."
-  ]
+  "path": ["John Smith", "Global Trade Corp", "Account AX91", "Person B"],
+  "warnings": ["Claim #101 is marked DISPUTED."]
 }
 ```
-
-### 6.3 Cross-Case Overlap Detection
-* **Method & Path**: `GET /cases/{id}/overlaps`
-* **Response (200 OK)**:
-```json
-{
-  "overlapping_cases": [
-    {
-      "case_id": "case_999",
-      "case_number": "CASE-2025-084",
-      "case_name": "Offshore Holding Probe",
-      "shared_entities": [
-        {
-          "entity_id": "ent_account_ax91",
-          "name": "Account AX91",
-          "type": "FINANCIAL_ACCOUNT"
-        }
-      ]
-    }
-  ]
-}
-```
-
-### 6.4 Find Relationship Path
-* **Method & Path**: `GET /entities/{source_id}/paths/{target_id}`
-* **Query Params**: `max_hops` (int, default: 4)
-* **Response (200 OK)**: Shortest evidence-supported path between two entities.
 
 ---
 
-## 7. Evidence & Claim Lifecycle APIs
+## 8. Claim Lifecycle & Evidence APIs
 
-### 7.1 Challenge a Claim
-* **Method & Path**: `POST /claims/{id}/challenge`
-* **Required Role**: `INVESTIGATOR`, `REVIEWER`, or `ORGANIZATION_ADMIN`
-* **Request Body**:
+### 8.1 Challenge a Claim
+- **Method & Path**: `POST /claims/{id}/challenge`
+- **Required Role**: `INVESTIGATOR`, `REVIEWER`, or `ORGANIZATION_ADMIN`
+- **Request Body**:
 ```json
 {
-  "reason": "Document 2 (page 12) proves that the wire transfer was initiated by an unauthorized proxy, not John Smith directly.",
-  "counter_document_id": "doc_99b"
+  "reason": "Doc #45 proves credentials compromised before transfer.",
+  "counter_document_id": "doc_45"
 }
 ```
-* **Response (200 OK)**:
+- **Response (200 OK)**: Claim status updated to `DISPUTED`.
+
+### 8.2 Review Claim
+- **Method & Path**: `POST /claims/{id}/review`
+- **Required Role**: `REVIEWER` or `ORGANIZATION_ADMIN`
+- **Request Body**:
 ```json
 {
-  "claim_id": "claim_101",
-  "status": "DISPUTED",
-  "updated_at": "2026-11-18T01:46:00Z"
+  "review_outcome": "REJECTED",
+  "resulting_status": "RETRACTED",
+  "reason": "Forensic audit debunked attribution."
 }
 ```
+- **Response (200 OK)**: Claim status updated to `RETRACTED` and review outcome set to `REJECTED`.
 
-### 7.2 Review and Retract / Reinstate Claim
-* **Method & Path**: `POST /claims/{id}/review`
-* **Request Body**:
-```json
-{
-  "decision": "RETRACT",
-  "notes": "Evidence from forensic audit supersedes initial field report."
-}
-```
-* **Response (200 OK)**: Updated claim status (`RETRACTED`).
-
-### 7.3 Get Claim Audit History
-* **Method & Path**: `GET /claims/{id}/history`
-* **Response (200 OK)**: Chronological list of events (`CLAIM_CREATED`, `CLAIM_CHALLENGED`, `CLAIM_REVIEWED`).
+### 8.3 Get Claim History
+- **Method & Path**: `GET /claims/{id}/history`
+- **Response (200 OK)**: Chronological array of `claim_events`.
 
 ---
 
-## 8. Analytics & Audit APIs
+## 9. Reports & Audit APIs
 
-### 8.1 Organization Overview Metrics
-* **Method & Path**: `GET /analytics/overview`
-* **Response (200 OK)**:
-```json
-{
-  "total_documents": 542,
-  "total_entities": 1890,
-  "total_claims": 4120,
-  "disputed_claims": 27,
-  "ingestion_failure_rate": 0.012,
-  "active_cases": 14
-}
-```
+### 9.1 Generate Evidentiary Report
+- **Method & Path**: `POST /cases/{id}/reports`
+- **Request Body**: `{"format": "PDF", "include_graph": true, "include_audit_history": true}`
+- **Response (201 Created)**: Frozen report artifact metadata with download URL.
 
-### 8.2 Audit Log Inspection
-* **Method & Path**: `GET /audit-logs`
-* **Query Params**: `case_id`, `actor_id`, `action`, `from_date`, `to_date`
-* **Response (200 OK)**: Paginated audit records.
+### 9.2 Inspect Audit Logs
+- **Method & Path**: `GET /audit-logs`
+- **Query Params**: `case_id`, `actor_id`, `action`, `page`, `page_size`
+- **Response (200 OK)**: Paginated audit event records.

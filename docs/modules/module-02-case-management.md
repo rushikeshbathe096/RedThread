@@ -1,5 +1,11 @@
 # Module 2: Case Management
 
+> **Document Status**: `DESIGN`  
+> **Module ID**: `MOD-02`  
+> **Responsibility**: Investigation workspace isolation, team assignments, and cross-case intelligence boundaries.
+
+---
+
 ## 1. Purpose & Scope
 Every investigation in RedThread operates within an isolated logical workspace known as a **Case**. A case owns documents, assigned investigators, extracted entities, and attributed claims. 
 
@@ -40,3 +46,10 @@ flowchart LR
 ## 5. Engineering Considerations
 - **Non-Disclosing 404s**: When a user attempts to access a case belonging to another organization or a case they are not assigned to, the API returns a generic 404 rather than 403, preventing case enumeration.
 - **Cascade Rules**: Archiving a case hides it from active listings while preserving all evidence, graph structures, and audit logs.
+
+---
+
+## 6. Related Documents
+- [Database Design](../database-design.md)
+- [API Specification](../api-specification.md)
+- [Security Model](../security-model.md)

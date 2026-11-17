@@ -1,10 +1,13 @@
 # ADR-001: Hybrid PostgreSQL and Cognee Storage Architecture
 
-## Status
-Accepted
+> **Document Status**: `DESIGN`  
+> **Date**: 2026-11-18  
+> **Status**: Accepted
+
+---
 
 ## Context
-RedThread needs to store and manage traditional application domain entities (organizations, users, memberships, case assignments, document binary metadata, audit logs) while simultaneously executing complex graph-native intelligence operations (multi-hop traversal, entity connection discovery, and semantic vector indexing).
+RedThread requires persistent storage for traditional application domain entities (organizations, users, memberships, case assignments, document metadata, audit logs) while simultaneously executing complex graph-native intelligence operations (multi-hop traversal, entity connection discovery, and semantic vector indexing).
 
 Evaluating potential architectures:
 1. **Pure Relational (PostgreSQL Only with Recursive CTEs)**:
@@ -24,7 +27,7 @@ We designate **PostgreSQL 16 as the authoritative Source of Truth** and **Cognee
 - **PostgreSQL**:
   - Identity, authentication, and organization tenancy.
   - Case workspaces, document metadata, and ingestion job state.
-  - Relational claims, source offsets, versioning, and immutable audit logs.
+  - Relational claims (the canonical assertions), source offsets, versioning, and immutable audit logs.
   - Row-Level Security (RLS) enforcement.
 - **Cognee**:
   - Knowledge graph entity-relationship indexing.
@@ -37,3 +40,10 @@ We designate **PostgreSQL 16 as the authoritative Source of Truth** and **Cognee
 ## Consequences
 - **Positive**: Strict ACID guarantees on sensitive evidence, audit logs, and authentication; high-performance graph traversal for investigative queries.
 - **Negative**: Requires synchronization logic between PostgreSQL and Cognee during ingestion and claim mutation workflows.
+
+---
+
+## Related Documents
+- [System Architecture](../architecture.md)
+- [Database Design](../database-design.md)
+- [Data Consistency](../data-consistency.md)

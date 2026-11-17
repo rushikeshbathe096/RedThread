@@ -1,5 +1,11 @@
 # Module 7: Intelligent Recall & Grounded RAG
 
+> **Document Status**: `DESIGN`  
+> **Module ID**: `MOD-07`  
+> **Responsibility**: 13-stage hybrid recall pipeline, multi-hop question answering, strict citation verification, and hallucination prevention.
+
+---
+
 ## 1. Purpose & Scope
 Intelligent Recall is RedThread's conversational AI assistant. It allows investigators to query the evidence base using natural language:
 > *"How is John Smith connected to Person B, and what are the sources?"*
@@ -32,4 +38,9 @@ flowchart TD
 - **Mandatory Dispute Citations**: Any claim marked `DISPUTED` in the retrieved path is explicitly highlighted with counter-evidence.
 - **Traceable Path Output**: The returned `path` array is populated strictly from retrieved graph edges, not hallucinated text strings.
 
-For in-depth details, see [Hybrid Recall & RAG](file:///home/rushikeshbathe096/hackathons/Redthread/docs/hybrid-recall-and-rag.md) and [ADR-003](file:///home/rushikeshbathe096/hackathons/Redthread/docs/decisions/ADR-003-hybrid-graph-vector-recall.md).
+---
+
+## 4. Related Documents
+- [Hybrid Recall & RAG](../hybrid-recall-and-rag.md)
+- [ADR-003: Hybrid Graph-Vector Recall](../decisions/ADR-003-hybrid-graph-vector-recall.md)
+- [Evaluation Framework](../benchmarks/evaluation-framework.md)

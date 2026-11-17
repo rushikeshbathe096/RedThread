@@ -1,5 +1,11 @@
 # Module 1: User Authentication & Organization Management
 
+> **Document Status**: `DESIGN`  
+> **Module ID**: `MOD-01`  
+> **Responsibility**: Multi-tenant identity, session management, RBAC, and organization governance.
+
+---
+
 ## 1. Purpose & Scope
 This module establishes the identity, tenancy, and access governance foundations of RedThread. A production investigative intelligence platform cannot permit arbitrary cross-tenant access. Users belong to Organizations, have specific organizational and case-level roles, and authenticate via secure, rotating tokens.
 
@@ -52,3 +58,10 @@ sequenceDiagram
 - **Account Enumeration Defense**: Register and password reset flows respond with generic messages regardless of whether the email exists.
 - **IDOR Safeguards**: All subsequent API calls inspect `jwt.organization_id` before querying records.
 - **Session Termination**: Logging out permanently flags the refresh token record as `revoked_at = NOW()`.
+
+---
+
+## 6. Related Documents
+- [Security Model](../security-model.md)
+- [Threat Model](../threat-model.md)
+- [Database Design](../database-design.md)

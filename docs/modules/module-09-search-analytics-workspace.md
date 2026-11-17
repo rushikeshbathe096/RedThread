@@ -1,5 +1,11 @@
 # Module 9: Search, Analytics & Investigation Workspace
 
+> **Document Status**: `DESIGN`  
+> **Module ID**: `MOD-09`  
+> **Responsibility**: Multi-faceted investigative search, throughput & dispute analytics, and 3-panel UI workbench.
+
+---
+
 ## 1. Purpose & Scope
 This module provides the investigative workbench and analytics intelligence layer, translating backend graph and claim states into an intuitive user interface.
 
@@ -27,3 +33,10 @@ graph TD
         R[Right: Entity Dossier & Claim Citations]
     end
 ```
+
+---
+
+## 3. Related Documents
+- [System Architecture](../architecture.md)
+- [API Specification](../api-specification.md)
+- [Definition of Done](../definition-of-done.md)

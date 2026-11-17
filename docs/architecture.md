@@ -1,8 +1,16 @@
 # RedThread System Architecture
 
-## 1. System Overview
+> **Document Status**: `DESIGN`  
+> **Canonical Blueprint**: Modular monolith architecture, component boundaries, asynchronous pipelines, and hybrid persistence.
 
-RedThread is designed as a **modular monolith** at the application tier, coupled with distributed background processing and hybrid persistence engines. It bridges standard relational domain models (organizations, users, cases, access policies) with an AI-native knowledge graph for multi-hop evidence analysis.
+---
+
+## 1. System Overview & Core Principles
+
+RedThread is engineered as a **modular monolith** at the application layer, coupled with distributed background processing and a dual-datastore architecture:
+- **Evidence-First**: Every answer and relationship is grounded in source documents with exact character offsets.
+- **Graph-Based Memory**: Cross-document relationships are preserved as traversable entities and attributed claims.
+- **Historical Accountability**: Contradictions never silently overwrite past evidence; claims follow an audited lifecycle.
 
 ---
 
@@ -10,14 +18,14 @@ RedThread is designed as a **modular monolith** at the application tier, coupled
 
 ```mermaid
 flowchart TD
-    User([Investigator / User]) -->|HTTPS / WSS| WebUI[Next.js 15 Frontend<br/>TypeScript + Tailwind]
+    User([Investigator / Client]) -->|HTTPS / WSS| WebUI[Next.js 15 Frontend<br/>TypeScript + Tailwind + React Force Graph]
     
-    subgraph Application Tier [FastAPI Modular Monolith]
-        API[FastAPI API Gateway /api/v1]
+    subgraph Application Tier [FastAPI Modular Monolith /api/v1]
+        API[FastAPI Gateway]
         AuthSvc[Auth & RBAC Middleware]
         CaseSvc[Case Service]
         IngestSvc[Ingestion Service]
-        RecallSvc[Recall & RAG Service]
+        RecallSvc[Hybrid Recall & RAG Service]
         EvidenceSvc[Claim & Evidence Service]
         
         API --> AuthSvc
@@ -29,127 +37,131 @@ flowchart TD
     
     WebUI --> API
     
-    subgraph Data & Storage Layer
+    subgraph Persistence Layer
         PG[(PostgreSQL 16<br/>Source of Truth)]
-        S3[(S3-Compatible Object Store<br/>Raw Documents)]
-        Redis[(Redis 7<br/>Broker & Cache)]
+        S3[(S3-Compatible Object Storage<br/>Raw Documents)]
+        Redis[(Redis 7<br/>Broker & Task Queue)]
     end
     
     CaseSvc --> PG
     EvidenceSvc --> PG
     IngestSvc --> PG
     IngestSvc --> S3
-    IngestSvc -->|Enqueue Job| Redis
+    IngestSvc -->|1. Write Outbox Event| PG
+    
+    subgraph Outbox Relay & Task Queue
+        Relay[Transactional Outbox Relay]
+        PG -.->|2. Poll Pending Outbox| Relay
+        Relay -->|3. Enqueue Celery Task| Redis
+    end
     
     subgraph Asynchronous Worker Tier
         Celery[Celery Distributed Workers]
-        DocParser[Document Parser<br/>PyMuPDF / docx / email]
+        DocParser[Document Parsers<br/>PyMuPDF / docx / email / pandas]
         ExtrPipeline[LLM Extraction Pipeline]
         ResPipeline[Entity Resolution Pipeline]
+        SyncWorker[Cognee Sync & Reconciler]
         
         Redis --> Celery
         Celery --> DocParser
         DocParser --> ExtrPipeline
         ExtrPipeline --> ResPipeline
+        ResPipeline --> SyncWorker
     end
     
-    subgraph External & AI Services
-        Gemini[Google Gemini API<br/>Extraction & Synthesis]
-        Cognee[Cognee Graph Engine<br/>Graph Memory & Search]
+    subgraph External & AI Providers
+        Gemini[Google Gemini 1.5 Pro<br/>Extraction & Grounded Synthesis]
+        Cognee[Cognee Cloud / Engine<br/>Derived Graph & Vector Search]
     end
     
-    ExtrPipeline -->|Prompt + Context| Gemini
+    ExtrPipeline -->|Structured Extraction| Gemini
     ResPipeline --> PG
-    Celery -->|Sync Graph| Cognee
-    RecallSvc -->|1. Vector & Graph Traversal| Cognee
-    RecallSvc -->|2. Evidence Verification & State| PG
-    RecallSvc -->|3. Grounded Synthesis| Gemini
+    SyncWorker -->|Idempotent Graph Sync| Cognee
+    
+    RecallSvc -->|1. Traverse Graph & Vector Chunks| Cognee
+    RecallSvc -->|2. Verify Case Permissions & Status| PG
+    RecallSvc -->|3. Synthesize Grounded Citations| Gemini
 ```
 
 ---
 
-## 3. Technology Stack
+## 3. Technology Stack & Component Responsibilities
 
-| Layer | Technology | Primary Responsibility |
-| :--- | :--- | :--- |
-| **Frontend** | Next.js 15 (App Router), TypeScript, Tailwind CSS | High-performance interactive UI, force-directed graph exploration, split-screen document viewer. |
-| **State Management** | TanStack Query v5 | Server state synchronization, optimistic UI updates, request deduplication, cache invalidation. |
-| **Backend Framework** | FastAPI (Python 3.11+) | Async REST API endpoints, OpenAPI documentation, strict request/response serialization. |
-| **Data Validation** | Pydantic v2 | High-throughput data validation, LLM response parsing with strict type guarantees. |
-| **ORM / Data Access** | SQLAlchemy 2.0 (Async) + Alembic | Declarative schema management, connection pooling, transactional migrations. |
-| **Primary Relational DB** | PostgreSQL 16 | ACID source of truth: users, organizations, cases, documents, claims, sources, and audit logs. |
-| **Cache & Task Broker** | Redis 7 | Celery message broker, real-time job lock management, query result caching. |
-| **Task Queue** | Celery 5.x | Asynchronous background processing of multi-page files, idempotent retries, backoff handling. |
-| **Graph Intelligence** | Cognee Cloud / Engine | Graph-backed memory, multi-hop relationship exploration, semantic knowledge connections. |
-| **Language Model (LLM)** | Google Gemini 1.5 Pro / Flash | Structured information extraction, entity normalization, citation synthesis, contradiction analysis. |
-| **Embeddings** | Text-Embedding-004 / Sentence Transformers | Passage semantic retrieval, entity token similarity scoring. |
-| **File Storage** | S3-Compatible Storage (AWS S3 / Cloudflare R2 / MinIO) | Immutable storage of raw uploaded files (PDF, DOCX, TXT, CSV, EML). |
-| **Observability** | Structlog, Prometheus, OpenTelemetry | Structured JSON logs, latency tracing, worker queue metrics, external API health tracking. |
+| Layer | Technology | Version | Architectural Responsibility |
+| :--- | :--- | :--- | :--- |
+| **Frontend** | Next.js (App Router), React, TypeScript | 15.x / 19.x | Investigative workspace, interactive 3-panel UI, force-directed graph. |
+| **Styling & State** | Tailwind CSS, TanStack Query | v4 / v5 | Server state caching, request deduplication, optimistic UI updates. |
+| **API Framework** | FastAPI | 0.111+ | High-throughput async REST endpoints, OpenAPI contracts, dependency injection. |
+| **Data Validation** | Pydantic | 2.7+ | Strict schema validation, DTOs, and Gemini structured output extraction. |
+| **ORM & Migrations**| SQLAlchemy (Async) + Alembic | 2.0+ | ACID transactions, declarative models, schema migration management. |
+| **Primary Database**| PostgreSQL | 16 | Authoritative source of truth: users, cases, documents, claims, sources, and audit logs. |
+| **Task Queue & Cache**| Redis + Celery | 7 / 5.4+ | Distributed asynchronous job processing, exponential backoff, worker leasing. |
+| **Graph Accelerator**| Cognee Cloud / Local Engine | 1.2+ | Derived graph-backed memory, vector search, multi-hop path traversal. |
+| **LLM Provider** | Google Gemini (via `google-genai`) | 1.5 Pro | Extraction of entities, claims, offsets, and strictly grounded citation synthesis. |
+| **Object Storage** | S3-Compatible (R2 / MinIO / S3) | - | Immutable binary file storage with randomized UUID tenant keys. |
+| **Test Suites** | Pytest, pytest-asyncio, Playwright | - | Unit, integration, security, idempotency, and browser E2E workflows. |
 
 ---
 
-## 4. The Hybrid Storage Rationale: PostgreSQL + Cognee
+## 4. PostgreSQL and Cognee Hybrid Storage Design
 
-A foundational architectural decision in RedThread is separating **domain governance** from **graph reasoning**.
+A fundamental rule of RedThread is that **PostgreSQL is the source of truth, and Cognee is a derived graph/retrieval accelerator**.
 
-### PostgreSQL: Domain Source of Truth
-* **Ownership & Tenancy**: Strict enforcement of Organization $\rightarrow$ Case $\rightarrow$ Document relationships with Row-Level Security (RLS) and foreign keys.
-* **Auditability & Claim State**: Immutable records of every claim change, contradiction, and investigator review (`claim_events` table).
-* **Idempotency & Processing State**: Ingestion job state machine, attempt counters, and document deduplication hashes.
+### Division of Responsibilities:
+```
+PostgreSQL 16 (Authoritative Source of Truth)
+├── Multi-tenancy & IAM (Users, Organizations, Memberships, Case Access)
+├── File Metadata & Ingestion State Machine (Documents, Chunks, Jobs)
+├── Canonical Evidence Ledger (Claims, Claim Sources, Claim Events)
+├── Reversible Entity Resolution (Entities, Aliases, Entity Merges)
+└── Outbox Events & Audit Logs
 
-### Cognee: Graph & Vector Intelligence Accelerator
-* **Graph Traversal**: Subgraph extraction, path finding between disparate entities, and bounded relationship queries across multi-document clusters.
-* **Vector Indexing**: High-dimensional vector searches for semantic passage retrieval.
-* **Topology Management**: Maintaining visual adjacency and graph connectivity structures.
+Cognee (Derived Graph & Retrieval Accelerator)
+├── Graph Construction & Adjacency Indexing
+├── Bounded Path Traversal (BFS, Shortest Path)
+└── Vector Semantic Similarity Indexing
+```
 
+### Authorization Boundary Invariant
 > [!IMPORTANT]
-> **Authorization Boundary Invariant**: Cognee is an accelerator, not the authorization authority. No graph edge or node returned from Cognee is exposed to an end user until verified against PostgreSQL permissions for the user's active case membership.
+> **Zero Trust in Derived Layers**: Cognee does not enforce application tenancy or case permissions. Every node, edge, and passage returned from Cognee must be cross-referenced against PostgreSQL case permissions before returning to the user.
 
 ---
 
-## 5. Architectural Directory Layout
+## 5. Ingestion & Graph Synchronization Resilience
 
-The application follows clean separation of concerns within a modular monolith:
+### 5.1 Transactional Outbox Pattern
+To prevent distributed transaction failures between PostgreSQL and Redis:
+1. When a document upload is accepted, the API writes the document record and inserts a `DOCUMENT_INGESTION_REQUESTED` row into `outbox_events` in the **same database transaction**.
+2. An asynchronous outbox publisher reads pending outbox events and pushes tasks to Redis.
+3. This guarantees that a document record is never orphaned without a corresponding processing task.
 
-```
-backend/
-├── app/
-│   ├── main.py                  # FastAPI initialization & middleware registration
-│   ├── dependencies.py          # Database sessions, current user, tenant context
-│   ├── api/
-│   │   └── v1/                  # HTTP Routers (auth, cases, documents, recall, etc.)
-│   ├── core/
-│   │   ├── config.py            # Pydantic BaseSettings (environment variables)
-│   │   ├── security.py          # Password hashing (Argon2id), JWT generation/validation
-│   │   └── exceptions.py        # Centralized HTTP and domain error definitions
-│   ├── models/                  # SQLAlchemy ORM declarative models
-│   ├── schemas/                 # Pydantic DTOs for requests and responses
-│   ├── repositories/            # Database query abstractions
-│   ├── services/                # Pure business logic services
-│   ├── workers/                 # Celery app configuration and task definitions
-│   ├── integrations/            # Third-party adapters (Cognee, Gemini, S3, Embeddings)
-│   ├── graph/                   # Traversal algorithms, entity resolution scorers
-│   └── evaluation/              # AI benchmarks, synthetic datasets, metrics calculators
-├── migrations/                  # Alembic database migration scripts
-└── tests/                       # Unit, integration, security, and eval test suites
-```
+### 5.2 Independently Retryable & Idempotent Graph Synchronization
+Because external network calls to Cognee or Gemini cannot be rolled back by PostgreSQL database transactions:
+- The worker executes database writes (persisting entities and claims) **first**.
+- Next, the worker synchronizes entities and relationships into Cognee using an **idempotent sync function** (keyed by entity and claim UUIDs).
+- If Cognee synchronization fails due to a network timeout or provider outage, the job is transitioned to `FAILED` with retry backoff.
+- On retry, existing database records are recognized via unique constraints, and the synchronization resumes without creating duplicate nodes or edges.
+- A periodic **Reconciliation Worker** runs background consistency audits between PostgreSQL claims and Cognee graph edges.
 
 ---
 
-## 6. End-to-End Data Flows
+## 6. End-to-End Request Lifecycles
 
-### A. Document Ingestion Flow
-1. **Upload**: Client sends multipart document to `POST /api/v1/cases/{id}/documents`.
-2. **Validation & Hashing**: Backend validates MIME type, computes SHA-256 hash (deduplication check), stores file in S3, and writes `documents` and `ingestion_jobs` records in PostgreSQL.
-3. **Queueing**: FastAPI dispatches a job ID to Redis queue and responds immediately with `202 Accepted` (`{"job_id": "...", "status": "QUEUED"}`).
-4. **Execution**: Celery worker parses text, chunks content, invokes Gemini for structured extraction (entities, claims, offsets), runs entity resolution, and commits records to PostgreSQL.
-5. **Sync**: Worker updates Cognee graph with extracted entities and edges, then transitions the job state in PostgreSQL to `COMPLETED`.
+### 6.1 Ingestion Request Lifecycle
+1. `POST /api/v1/cases/{id}/documents` $\rightarrow$ Validate MIME magic bytes & compute SHA-256.
+2. Store file bytes in S3; write `documents`, `ingestion_jobs`, and `outbox_events` (`status: PENDING`) in PostgreSQL.
+3. Return `202 Accepted` with `job_id` and `document_id`.
+4. Outbox relay dispatches task to Redis $\rightarrow$ Celery worker picks up task.
+5. Worker parses pages (PyMuPDF), chunks text, calls Gemini for structured extraction, runs weighted entity resolution, and commits records to PostgreSQL.
+6. Worker syncs nodes/edges to Cognee, marks `ingestion_jobs` as `COMPLETED`, and emits SSE event.
 
-### B. Hybrid Recall Flow
-1. **Query**: Investigator submits query to `POST /api/v1/cases/{id}/recall`.
-2. **Intent Parsing**: LLM identifies target entities, search constraints, and scope.
-3. **Dual Retrieval**:
-   - **Vector Search**: Finds semantically relevant raw text chunks.
-   - **Graph Traversal**: Traverses paths between identified entities in Cognee.
-4. **Authorization & State Filtering**: Graph paths and passages are cross-referenced with PostgreSQL. Retracted claims are filtered out; disputed claims are annotated.
-5. **Grounded Generation**: Gemini synthesizes an answer referencing only verified claims with exact citations and path traces.
+### 6.2 Hybrid Recall Request Lifecycle
+1. `POST /api/v1/cases/{id}/recall` $\rightarrow$ Authenticate user & verify case membership.
+2. Query Understanding extracts target entity names and intent.
+3. Execute dual retrieval:
+   - **Graph Traversal**: Discover shortest paths and bounded neighborhoods in Cognee.
+   - **Vector Retrieval**: Fetch top-$K$ semantic text chunks.
+4. Filter out retracted claims, flag disputed claims, and verify all claims belong to authorized cases.
+5. Synthesize grounded answer via Gemini using strictly formatted citations (`[Claim #ID]`).
+6. Return answer, verified graph path, and source citations.

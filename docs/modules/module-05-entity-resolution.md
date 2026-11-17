@@ -1,5 +1,11 @@
 # Module 5: Entity Resolution
 
+> **Document Status**: `DESIGN`  
+> **Module ID**: `MOD-05`  
+> **Responsibility**: Weighted string/attribute matching, alias indexing, manual review queue, and reversible merge operations.
+
+---
+
 ## 1. Purpose & Scope
 Entity resolution handles ambiguous, abbreviated, or slightly mismatched entity names across disparate documents. In real investigations, a subject may appear as *"Tata Consultancy Services"*, *"TCS"*, or *"Tata Consultancy Services Ltd."*. Conversely, *"Rahul Sharma"* and *"Rahul S. Sharma"* may represent completely different individuals.
 
@@ -18,6 +24,8 @@ Where:
 - $A$: Attribute Matching (Tax IDs, phone numbers, addresses, registration keys).
 - $C$: Contextual Embedding Similarity (surrounding textual topics).
 - $T$: Entity Type Compatibility ($1.0$ if compatible, $0.0$ if conflicting).
+
+*Note*: $S$ is evaluated as a **heuristic ranking score**, not a calibrated probability.
 
 ---
 
@@ -38,4 +46,9 @@ An incorrect entity merge can cross-wire unrelated financial accounts or investi
 - **Merge Tracking**: Logged in `entity_merges` with a JSON snapshot of pre-merge relationship graphs.
 - **Unmerge Capability**: Re-establishes separate entity records, rewrites relationship pointers, and updates Cognee graph structures without data loss.
 
-For comprehensive details, consult the dedicated [Entity Resolution Specification](file:///home/rushikeshbathe096/hackathons/Redthread/docs/entity-resolution.md) and [ADR-005](file:///home/rushikeshbathe096/hackathons/Redthread/docs/decisions/ADR-005-weighted-entity-resolution.md).
+---
+
+## 5. Related Documents
+- [Entity Resolution Specification](../entity-resolution.md)
+- [ADR-005: Weighted Entity Resolution](../decisions/ADR-005-weighted-entity-resolution.md)
+- [Database Design](../database-design.md)
